@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quant-distill"
+version = "0.1.0"
+description = "Centralized distillation, entity, and sentiment API"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "bottle>=0.13",
+  "waitress>=3.0",
+  "httpx>=0.28",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "webtest>=3",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "bandit>=1.7",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["bottle", "waitress"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["quant_distill.api.*"]
+disallow_untyped_defs = false
+disallow_untyped_decorators = false
+warn_return_any = false
