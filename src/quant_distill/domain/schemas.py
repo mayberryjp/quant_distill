@@ -45,7 +45,6 @@ class CapabilitiesResponse(BaseModel):
     entity_prompt_version: str
     max_chunk_chars: int
     watchlist_enabled: bool
-    momentum_enabled: bool
     stateless: bool = True
 
 
@@ -54,7 +53,6 @@ class StatsResponse(BaseModel):
     counters: dict[str, int]
     last_successful_llm_call_at: datetime | None = None
     last_watchlist_failure_at: datetime | None = None
-    last_momentum_failure_at: datetime | None = None
     latency_ms: dict[str, dict[str, float | None]] = Field(default_factory=dict)
 
 
@@ -159,9 +157,7 @@ class ProcessOptions(BaseModel):
     include_sentiment: bool = True
     include_entities: bool = True
     include_watchlist: bool = True
-    include_momentum: bool = True
     watchlist_required: bool = False
-    momentum_required: bool = False
     max_chunk_chars: int | None = Field(default=None, ge=1000, le=50000)
 
 
@@ -173,7 +169,6 @@ class DistillRequest(BaseModel):
         include_sentiment=False,
         include_entities=False,
         include_watchlist=False,
-        include_momentum=False,
     ))
 
 
@@ -185,7 +180,6 @@ class SummaryRequest(BaseModel):
         include_sentiment=False,
         include_entities=False,
         include_watchlist=False,
-        include_momentum=False,
     ))
 
 
@@ -228,10 +222,6 @@ class WatchlistEnrichment(BaseModel):
     entries: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class MomentumEnrichment(BaseModel):
-    latest: dict[str, Any] | None = None
-
-
 class EnrichedEntity(BaseModel):
     raw_mention: str
     entity_type: str
@@ -242,7 +232,6 @@ class EnrichedEntity(BaseModel):
     confidence: float | None = None
     context: str | None = None
     watchlist: WatchlistEnrichment | None = None
-    momentum: MomentumEnrichment | None = None
 
 
 class DistillEndpointResponse(BaseModel):

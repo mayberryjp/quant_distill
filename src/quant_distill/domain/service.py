@@ -14,7 +14,6 @@ from quant_distill.domain.schemas import (
     EntityMention,
     EntitiesEndpointResponse,
     EnrichedEntity,
-    MomentumEnrichment,
     ProcessRequest,
     ProcessOptions,
     ProcessResponse,
@@ -26,7 +25,6 @@ from quant_distill.domain.schemas import (
 )
 from quant_distill.domain.stats import StatsCollector
 from quant_distill.repository.llm_client import OpenAICompatLLMClient
-from quant_distill.repository.momentum_client import MomentumClient
 from quant_distill.repository.watchlist_client import WatchlistClient
 
 SERVICE_NAME = "quant-distill-api"
@@ -56,14 +54,12 @@ class QuantDistillService:
         *,
         llm_client: Any,
         watchlist_client: Any | None = None,
-        momentum_client: Any | None = None,
         stats: StatsCollector | None = None,
         settings_obj: Any = settings,
         now: Callable[[], object] | None = None,
     ) -> None:
         self.llm = llm_client
         self.watchlist = watchlist_client
-        self.momentum = momentum_client
         self.stats = stats or StatsCollector()
         self.settings = settings_obj
         self.now = now
@@ -78,7 +74,6 @@ class QuantDistillService:
             "entity_prompt_version": self.settings.entity_prompt_version,
             "max_chunk_chars": self.settings.distill_max_chunk_chars,
             "watchlist_enabled": bool(self.watchlist and self.settings.watchlist_enabled),
-            "momentum_enabled": bool(self.momentum and self.settings.momentum_enabled),
             "stateless": True,
         }
 
@@ -93,14 +88,6 @@ class QuantDistillService:
             )
         else:
             dependencies.append({"name": "watchlist", "status": "disabled", "detail": None})
-
-        if self.settings.momentum_enabled and self.momentum is not None:
-            m_ok, m_detail = self.momentum.readiness()
-            dependencies.append(
-                {"name": "momentum", "status": "ok" if m_ok else "unavailable", "detail": m_detail}
-            )
-        else:
-            dependencies.append({"name": "momentum", "status": "disabled", "detail": None})
 
         overall_ok = all(dep["status"] != "unavailable" for dep in dependencies if dep["name"] == "llm")
         return {"ok": overall_ok, "dependencies": dependencies}
@@ -261,7 +248,6 @@ class QuantDistillService:
         enriched: list[EnrichedEntity] = []
         for row in entity_rows:
             watchlist_data = None
-            momentum_data = None
             if row.ticker and options.include_watchlist and self.watchlist is not None:
                 try:
                     watchlist_data = WatchlistEnrichment(entries=self.watchlist.get_entries(row.ticker))
@@ -274,23 +260,10 @@ class QuantDistillService:
                             f"watchlist enrichment failed: {type(exc).__name__}",
                         ) from exc
                     warnings.append(f"watchlist enrichment failed for {row.ticker}: {type(exc).__name__}")
-            if row.ticker and options.include_momentum and self.momentum is not None:
-                try:
-                    momentum_data = MomentumEnrichment(latest=self.momentum.get_latest(row.ticker))
-                except Exception as exc:
-                    self.stats.mark_momentum_failure()
-                    if options.momentum_required:
-                        raise DependencyUnavailableError(
-                            "dependency_unavailable",
-                            "required dependency unavailable",
-                            f"momentum enrichment failed: {type(exc).__name__}",
-                        ) from exc
-                    warnings.append(f"momentum enrichment failed for {row.ticker}: {type(exc).__name__}")
             enriched.append(
                 EnrichedEntity(
                     **row.model_dump(),
                     watchlist=watchlist_data,
-                    momentum=momentum_data,
                 )
             )
         return enriched, warnings
@@ -313,11 +286,4 @@ def build_default_service() -> QuantDistillService:
             api_key=settings.watchlist_api_key,
             timeout=settings.watchlist_timeout,
         )
-    momentum = None
-    if settings.momentum_enabled and settings.momentum_api_url:
-        momentum = MomentumClient(
-            base_url=settings.momentum_api_url,
-            api_key=settings.momentum_api_key,
-            timeout=settings.momentum_timeout,
-        )
-    return QuantDistillService(llm_client=llm, watchlist_client=watchlist, momentum_client=momentum)
+    return QuantDistillService(llm_client=llm, watchlist_client=watchlist)

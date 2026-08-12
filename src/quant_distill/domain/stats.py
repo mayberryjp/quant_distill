@@ -19,7 +19,6 @@ class StatsCollector:
         self.latency_samples: dict[str, list[float]] = defaultdict(list)
         self.last_successful_llm_call_at: datetime | None = None
         self.last_watchlist_failure_at: datetime | None = None
-        self.last_momentum_failure_at: datetime | None = None
 
     def increment(self, key: str, amount: int = 1) -> None:
         self.counters[key] += amount
@@ -36,9 +35,6 @@ class StatsCollector:
     def mark_watchlist_failure(self) -> None:
         self.last_watchlist_failure_at = datetime.now(timezone.utc)
 
-    def mark_momentum_failure(self) -> None:
-        self.last_momentum_failure_at = datetime.now(timezone.utc)
-
     def snapshot(self) -> dict[str, Any]:
         latency = {
             endpoint: {
@@ -52,6 +48,5 @@ class StatsCollector:
             "counters": dict(self.counters),
             "last_successful_llm_call_at": self.last_successful_llm_call_at,
             "last_watchlist_failure_at": self.last_watchlist_failure_at,
-            "last_momentum_failure_at": self.last_momentum_failure_at,
             "latency_ms": latency,
         }

@@ -13,7 +13,6 @@ def test_ready_ok() -> None:
                 "dependencies": [
                     {"name": "llm", "status": "ok", "detail": "ok"},
                     {"name": "watchlist", "status": "disabled", "detail": None},
-                    {"name": "momentum", "status": "disabled", "detail": None},
                 ],
             }
         )

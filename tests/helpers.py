@@ -73,25 +73,3 @@ class FakeWatchlist:
 
     def readiness(self) -> tuple[bool, str]:
         return True, "ok"
-
-
-class FakeMomentum:
-    def __init__(self, *, should_fail: bool = False) -> None:
-        self.should_fail = should_fail
-
-    def get_latest(self, ticker: str) -> dict[str, Any] | None:
-        if self.should_fail:
-            raise httpx.ConnectError("failed")
-        return {
-            "ticker": ticker.upper(),
-            "bar_date": "2026-08-11",
-            "close": 210.0,
-            "momentum_5d": 0.12,
-            "momentum_15d": 0.21,
-            "momentum_30d": 0.35,
-            "is_momentum": True,
-            "bars_available": 31,
-        }
-
-    def readiness(self) -> tuple[bool, str]:
-        return True, "ok"

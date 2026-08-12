@@ -5,10 +5,10 @@ from webtest import TestApp
 from quant_distill.api.app import create_app
 from quant_distill.domain.service import QuantDistillService
 from quant_distill.domain.stats import StatsCollector
-from tests.helpers import FakeLLM, FakeMomentum, FakeWatchlist
+from tests.helpers import FakeLLM, FakeWatchlist
 
 
-def _service(*, watchlist_fail: bool = False, momentum_fail: bool = False) -> QuantDistillService:
+def _service(*, watchlist_fail: bool = False) -> QuantDistillService:
     settings_obj = type(
         "TestSettings",
         (),
@@ -19,13 +19,11 @@ def _service(*, watchlist_fail: bool = False, momentum_fail: bool = False) -> Qu
             "entity_prompt_version": "v1",
             "distill_max_chunk_chars": 100,
             "watchlist_enabled": True,
-            "momentum_enabled": True,
         },
     )()
     return QuantDistillService(
         llm_client=FakeLLM(),
         watchlist_client=FakeWatchlist(should_fail=watchlist_fail),
-        momentum_client=FakeMomentum(should_fail=momentum_fail),
         stats=StatsCollector(),
         settings_obj=settings_obj,
     )
@@ -45,7 +43,6 @@ def test_process_happy_path() -> None:
                 "include_sentiment": True,
                 "include_entities": True,
                 "include_watchlist": True,
-                "include_momentum": True,
             },
         },
     )
@@ -64,16 +61,16 @@ def test_distill_validation_error() -> None:
 
 
 def test_entities_optional_enrichment_degrades() -> None:
-    client = TestApp(create_app(service=_service(watchlist_fail=True, momentum_fail=True)))
+    client = TestApp(create_app(service=_service(watchlist_fail=True)))
     response = client.post_json(
         "/v1/entities",
         {
             "summary": "Apple looked strong.",
-            "options": {"include_watchlist": True, "include_momentum": True},
+            "options": {"include_watchlist": True},
         },
     )
     assert response.status_code == 200
-    assert len(response.json["processing"]["warnings"]) == 2
+    assert len(response.json["processing"]["warnings"]) == 1
 
 
 def test_process_required_enrichment_503() -> None:
@@ -91,7 +88,6 @@ def test_process_required_enrichment_503() -> None:
                 "include_entities": True,
                 "include_watchlist": True,
                 "watchlist_required": True,
-                "include_momentum": False,
             },
         },
         status=503,

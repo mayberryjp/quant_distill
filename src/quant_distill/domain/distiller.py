@@ -12,17 +12,42 @@ log = logging.getLogger("quant_distill.distiller")
 _DEPTH = (
     "Be EXHAUSTIVE. Cover EVERY distinct topic, company, ticker, guest, trade, and market "
     "discussed — do not omit any segment, and do not merge unrelated points into one line. "
-    "Favor depth and breadth over brevity. Preserve concrete specifics wherever the source states "
-    "them: tickers, company names, price levels, percentage moves, price targets, earnings and "
-    "guidance numbers, analyst ratings, deals, macro data, and who made each call."
+    "Favor depth and breadth over brevity: the summary should be long and comprehensive, with a "
+    "dedicated section for each topic and a sub-bullet for each specific point within it. "
+    "Preserve concrete specifics wherever the source states them: tickers, company names, price "
+    "levels, percentage moves, price targets, earnings and guidance numbers, analyst ratings and "
+    "upgrades/downgrades, deals (M&A, partnerships, debt/equity raises), macro data, and which "
+    "speaker or guest made each call. Do NOT shorten, generalize, or drop details to save space. "
+    "Capture all key points accurately and do not invent information that is not present in the source."
 )
 _SUMMARY_FORMAT = (
-    "The summary value MUST be Markdown with bold numbered section headings and bullets. "
-    "Return a self-contained detailed summary preserving ordering of topics. " + _DEPTH
+    "The \"summary\" value MUST be a Markdown document with this structure:\n"
+    "- A bold title line naming the show and date if known, e.g. "
+    "\"**Transcript Summary (June 24, 2026)**\".\n"
+    "- A numbered list of the major topics in the order discussed; each item starts with a bold "
+    "section heading (e.g. \"1. **Market Overview**:\", \"2. **Micron Technology**:\").\n"
+    "- Under each heading, an indented Markdown bullet list where every distinct sub-point is its "
+    "own bullet beginning with a bold label and a colon (e.g. \"   - **Earnings**: ...\").\n"
+    "- End with a single closing sentence stating what the summary captures.\n"
+    + _DEPTH
 )
 _JSON_CONTRACT = (
-    "Do NOT add any keys other than summary, key_topics, and segments. "
-    "Return raw JSON only: no prose, no explanation, and no Markdown code fences."
+    " OUTPUT FORMAT — follow EXACTLY:\n"
+    "Return ONLY a single JSON object with these THREE top-level keys and NOTHING else:\n"
+    '  "summary": string  — the Markdown summary described above,\n'
+    '  "key_topics": array of short strings — one per numbered section/topic,\n'
+    '  "segments": array of objects, each with "speaker", "role", and "summary".\n'
+    "HARD RULES:\n"
+    '- The three keys "summary", "key_topics", and "segments" MUST be at the ROOT of the object.\n'
+    "- Do NOT wrap the object inside another key. Do NOT use the show name, date, or a title as a "
+    "key. The title belongs INSIDE the \"summary\" string, never as a JSON key.\n"
+    '- Do NOT nest the object under keys like "result", "output", "data", "document", or "response".\n'
+    '- "summary" MUST be a plain string, not an object or array.\n'
+    "- Do NOT add any keys other than the three specified.\n"
+    "- Return raw JSON only: no prose, no explanation, and no Markdown code fences.\n"
+    'Example of the REQUIRED shape: '
+    '{"summary": "**Transcript Summary**\\n1. **Topic**: ...", "key_topics": ["Topic"], '
+    '"segments": [{"speaker": "Host", "role": "anchor", "summary": "..."}]}'
 )
 
 DISTILL_SYSTEM = (

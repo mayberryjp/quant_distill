@@ -2,8 +2,36 @@ services:
   quant-distill:
     build:
       context: .
-    env_file:
-      - .env
+    environment:
+      API_LISTEN_ADDRESS: "0.0.0.0"
+      API_PORT: "8021"
+      LOG_LEVEL: "INFO"
+
+      # Ollama OpenAI-compatible endpoint (use service DNS, not localhost)
+      LLM_BASE_URL: "http://ollama:11434/v1/chat/completions"
+      LLM_MODEL: "llama3.1"
+      LLM_API_KEY: ""
+      LLM_TIMEOUT: "60"
+      LLM_MAX_TOKENS: "4096"
+      LLM_JSON_MODE: "true"
+      LLM_NUM_CTX: "16384"
+
+      DISTILL_PROMPT_VERSION: "v1"
+      SENTIMENT_PROMPT_VERSION: "v1"
+      ENTITY_PROMPT_VERSION: "v1"
+      DISTILL_MAX_CHUNK_CHARS: "12000"
+
+      # quant_signals / watchlist API
+      WATCHLIST_API_URL: "http://quant-signals:8016"
+      WATCHLIST_API_KEY: ""
+      WATCHLIST_TIMEOUT: "15"
+      WATCHLIST_ENABLED: "true"
+      WATCHLIST_REQUIRED: "false"
+
+      HTTP_RETRIES: "3"
+      RETRY_BACKOFF: "1.0"
+      MAX_PAGE_SIZE: "100"
+      PREWARM_ENABLED: "false"
     ports:
       - "8021:8021"
     restart: unless-stopped

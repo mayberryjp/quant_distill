@@ -5,7 +5,8 @@ from typing import Any, Protocol
 from quant_distill.domain.schemas import EntityMention, EntityOutput
 
 ENTITY_SYSTEM = (
-    "You extract every company or ticker referenced in a distilled summary. Return ONLY a JSON "
+    "You extract every company or ticker referenced in a distilled "
+    "summary. Return ONLY a JSON "
     "object: "
     '{"entities": [{"raw_mention": "as said", '
     '"entity_type": "ticker|company", "company_name": "normalized name", '

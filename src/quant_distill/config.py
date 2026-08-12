@@ -33,12 +33,6 @@ class Settings(BaseSettings):
     watchlist_enabled: bool = Field(True, validation_alias="WATCHLIST_ENABLED")
     watchlist_required: bool = Field(False, validation_alias="WATCHLIST_REQUIRED")
 
-    momentum_api_url: str = Field("", validation_alias="MOMENTUM_API_URL")
-    momentum_api_key: str = Field("", validation_alias="MOMENTUM_API_KEY")
-    momentum_timeout: int = Field(15, validation_alias="MOMENTUM_TIMEOUT")
-    momentum_enabled: bool = Field(True, validation_alias="MOMENTUM_ENABLED")
-    momentum_required: bool = Field(False, validation_alias="MOMENTUM_REQUIRED")
-
     http_retries: int = Field(3, validation_alias="HTTP_RETRIES")
     retry_backoff: float = Field(1.0, validation_alias="RETRY_BACKOFF")
     max_page_size: int = Field(100, validation_alias="MAX_PAGE_SIZE")
