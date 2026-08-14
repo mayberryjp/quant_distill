@@ -27,11 +27,15 @@ class Settings(BaseSettings):
     entity_prompt_version: str = Field("v1", validation_alias="ENTITY_PROMPT_VERSION")
     distill_max_chunk_chars: int = Field(12000, validation_alias="DISTILL_MAX_CHUNK_CHARS")
 
-    watchlist_api_url: str = Field("", validation_alias="WATCHLIST_API_URL")
-    watchlist_api_key: str = Field("", validation_alias="WATCHLIST_API_KEY")
-    watchlist_timeout: int = Field(15, validation_alias="WATCHLIST_TIMEOUT")
-    watchlist_enabled: bool = Field(True, validation_alias="WATCHLIST_ENABLED")
-    watchlist_required: bool = Field(False, validation_alias="WATCHLIST_REQUIRED")
+    sentiment_api_url: str = Field("", validation_alias="SENTIMENT_API_URL")
+    sentiment_api_key: str = Field("", validation_alias="SENTIMENT_API_KEY")
+    sentiment_timeout: int = Field(30, validation_alias="SENTIMENT_TIMEOUT")
+    sentiment_required: bool = Field(False, validation_alias="SENTIMENT_REQUIRED")
+
+    signals_api_url: str = Field("", validation_alias="SIGNALS_API_URL")
+    signals_api_key: str = Field("", validation_alias="SIGNALS_API_KEY")
+    signals_timeout: int = Field(30, validation_alias="SIGNALS_TIMEOUT")
+    signals_required: bool = Field(False, validation_alias="SIGNALS_REQUIRED")
 
     http_retries: int = Field(3, validation_alias="HTTP_RETRIES")
     retry_backoff: float = Field(1.0, validation_alias="RETRY_BACKOFF")

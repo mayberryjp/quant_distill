@@ -45,6 +45,7 @@ class CapabilitiesResponse(BaseModel):
     entity_prompt_version: str
     max_chunk_chars: int
     watchlist_enabled: bool
+    sentiment_delivery_enabled: bool
     stateless: bool = True
 
 

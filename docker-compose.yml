@@ -21,12 +21,17 @@ services:
       ENTITY_PROMPT_VERSION: "v1"
       DISTILL_MAX_CHUNK_CHARS: "12000"
 
-      # quant_signals / watchlist API
-      WATCHLIST_API_URL: "http://quant-signals:8016"
-      WATCHLIST_API_KEY: ""
-      WATCHLIST_TIMEOUT: "15"
-      WATCHLIST_ENABLED: "true"
-      WATCHLIST_REQUIRED: "false"
+      # quant_sentiment delivery API
+      SENTIMENT_API_URL: "http://quant-sentiment:8017/sentiment"
+      SENTIMENT_API_KEY: ""
+      SENTIMENT_TIMEOUT: "30"
+      SENTIMENT_REQUIRED: "false"
+
+      # quant_signals watchlist delivery API
+      SIGNALS_API_URL: "http://quant-signals:8016/signals"
+      SIGNALS_API_KEY: ""
+      SIGNALS_TIMEOUT: "30"
+      SIGNALS_REQUIRED: "false"
 
       HTTP_RETRIES: "3"
       RETRY_BACKOFF: "1.0"

@@ -25,6 +25,7 @@ from quant_distill.domain.schemas import (
 )
 from quant_distill.domain.stats import StatsCollector
 from quant_distill.repository.llm_client import OpenAICompatLLMClient
+from quant_distill.repository.sentiment_client import SentimentClient
 from quant_distill.repository.watchlist_client import WatchlistClient
 
 SERVICE_NAME = "quant-distill-api"
@@ -54,12 +55,14 @@ class QuantDistillService:
         *,
         llm_client: Any,
         watchlist_client: Any | None = None,
+        sentiment_client: Any | None = None,
         stats: StatsCollector | None = None,
         settings_obj: Any = settings,
         now: Callable[[], object] | None = None,
     ) -> None:
         self.llm = llm_client
         self.watchlist = watchlist_client
+        self.sentiment_client = sentiment_client
         self.stats = stats or StatsCollector()
         self.settings = settings_obj
         self.now = now
@@ -73,7 +76,8 @@ class QuantDistillService:
             "sentiment_prompt_version": self.settings.sentiment_prompt_version,
             "entity_prompt_version": self.settings.entity_prompt_version,
             "max_chunk_chars": self.settings.distill_max_chunk_chars,
-            "watchlist_enabled": bool(self.watchlist and self.settings.watchlist_enabled),
+            "watchlist_enabled": bool(self.watchlist),
+            "sentiment_delivery_enabled": bool(self.sentiment_client),
             "stateless": True,
         }
 
@@ -81,13 +85,21 @@ class QuantDistillService:
         ok, detail = self.llm.readiness()
         dependencies = [{"name": "llm", "status": "ok" if ok else "unavailable", "detail": detail}]
 
-        if self.settings.watchlist_enabled and self.watchlist is not None:
+        if self.watchlist is not None:
             w_ok, w_detail = self.watchlist.readiness()
             dependencies.append(
                 {"name": "watchlist", "status": "ok" if w_ok else "unavailable", "detail": w_detail}
             )
         else:
             dependencies.append({"name": "watchlist", "status": "disabled", "detail": None})
+
+        if self.sentiment_client is not None:
+            s_ok, s_detail = self.sentiment_client.readiness()
+            dependencies.append(
+                {"name": "sentiment", "status": "ok" if s_ok else "unavailable", "detail": s_detail}
+            )
+        else:
+            dependencies.append({"name": "sentiment", "status": "disabled", "detail": None})
 
         overall_ok = all(dep["status"] != "unavailable" for dep in dependencies if dep["name"] == "llm")
         return {"ok": overall_ok, "dependencies": dependencies}
@@ -193,13 +205,20 @@ class QuantDistillService:
             self.stats.mark_llm_success()
             durations["sentiment"] = _ms(sent_start)
             _merge_usage(total_usage, sent_usage)
+            self._deliver_sentiment(sentiment_out, request, warnings)
 
         entity_items = None
         if request.options.include_entities:
             ent_start = perf_counter()
             entity_out, ent_usage = entities.extract_entities(self.llm, distill_out.summary)
             self.stats.mark_llm_success()
-            items, entity_warnings = self._enrich_entities(entity_out.entities, request.options)
+            items, entity_warnings = self._enrich_entities(
+                entity_out.entities,
+                request.options,
+                source=request.source,
+                source_item_id=request.source_item_id,
+                metadata=request.metadata,
+            )
             warnings.extend(entity_warnings)
             durations["entities"] = _ms(ent_start)
             _merge_usage(total_usage, ent_usage)
@@ -243,6 +262,10 @@ class QuantDistillService:
         self,
         entity_rows: list[EntityMention],
         options: ProcessOptions,
+        *,
+        source: str | None = None,
+        source_item_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> tuple[list[EnrichedEntity], list[str]]:
         warnings: list[str] = []
         enriched: list[EnrichedEntity] = []
@@ -250,7 +273,23 @@ class QuantDistillService:
             watchlist_data = None
             if row.ticker and options.include_watchlist and self.watchlist is not None:
                 try:
-                    watchlist_data = WatchlistEnrichment(entries=self.watchlist.get_entries(row.ticker))
+                    signal_id = self.watchlist.submit(
+                        source=source or "quant_distill",
+                        source_item_id=source_item_id or row.ticker,
+                        ticker=row.ticker,
+                        direction=row.direction,
+                        confidence=row.confidence,
+                        reason=row.context or "",
+                        metadata={
+                            **(metadata or {}),
+                            "company_name": row.company_name,
+                            "raw_mention": row.raw_mention,
+                            "speaker": row.speaker,
+                        },
+                        model=self.settings.llm_model,
+                        prompt_version=self.settings.entity_prompt_version,
+                    )
+                    watchlist_data = WatchlistEnrichment(entries=[{"signal_id": signal_id}])
                 except Exception as exc:
                     self.stats.mark_watchlist_failure()
                     if options.watchlist_required:
@@ -268,6 +307,41 @@ class QuantDistillService:
             )
         return enriched, warnings
 
+    def _deliver_sentiment(
+        self,
+        output: Any,
+        request: ProcessRequest,
+        warnings: list[str],
+    ) -> None:
+        if self.sentiment_client is None:
+            return
+        observed_at = request.observed_at.isoformat() if request.observed_at else None
+        for observation in output.observations:
+            try:
+                self.sentiment_client.deliver(
+                    source=request.source,
+                    source_item_id=request.source_item_id,
+                    subject_type=observation.subject_type,
+                    subject=observation.subject,
+                    sentiment_label=observation.sentiment_label,
+                    sentiment_score=observation.sentiment_score,
+                    confidence=observation.confidence,
+                    horizon=observation.horizon,
+                    reason=observation.reason or "",
+                    observed_at=observed_at,
+                    metadata=request.metadata,
+                    model=self.settings.llm_model,
+                    prompt_version=self.settings.sentiment_prompt_version,
+                )
+            except Exception as exc:
+                if self.settings.sentiment_required:
+                    raise DependencyUnavailableError(
+                        "dependency_unavailable",
+                        "required dependency unavailable",
+                        f"sentiment delivery failed: {type(exc).__name__}",
+                    ) from exc
+                warnings.append(f"sentiment delivery failed for {observation.subject}: {type(exc).__name__}")
+
 
 def build_default_service() -> QuantDistillService:
     llm = OpenAICompatLLMClient(
@@ -280,10 +354,21 @@ def build_default_service() -> QuantDistillService:
         num_ctx=settings.llm_num_ctx,
     )
     watchlist = None
-    if settings.watchlist_enabled and settings.watchlist_api_url:
+    if settings.signals_api_url:
         watchlist = WatchlistClient(
-            base_url=settings.watchlist_api_url,
-            api_key=settings.watchlist_api_key,
-            timeout=settings.watchlist_timeout,
+            base_url=settings.signals_api_url,
+            api_key=settings.signals_api_key,
+            timeout=settings.signals_timeout,
         )
-    return QuantDistillService(llm_client=llm, watchlist_client=watchlist)
+    sentiment_client = None
+    if settings.sentiment_api_url:
+        sentiment_client = SentimentClient(
+            url=settings.sentiment_api_url,
+            api_key=settings.sentiment_api_key,
+            timeout=settings.sentiment_timeout,
+        )
+    return QuantDistillService(
+        llm_client=llm,
+        watchlist_client=watchlist,
+        sentiment_client=sentiment_client,
+    )

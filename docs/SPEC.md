@@ -17,7 +17,7 @@ It is a stateless processing API. It does not own the source-of-truth datastore 
 1. Replace per-repo distillation, sentiment, and entity orchestration with one shared API.
 2. Preserve the current three-pass behavior already present in `quant_youtube`, `quant_cnbc`, and the Reddit parity flow.
 3. Return validated structured JSON to peer services rather than storing results locally.
-4. Support optional read-only enrichments from `quant_signals` and `quant_momentum`.
+4. Deliver extracted sentiment to `quant_sentiment` and resolved entities to `quant_signals`.
 5. Follow the backend coding standards: Bottle app factory, Pydantic settings, JSON errors, Docker, CI, typing, and tests.
 
 ## 3. Non-goals
@@ -25,7 +25,6 @@ It is a stateless processing API. It does not own the source-of-truth datastore 
 1. No owned Postgres schema in v1.
 2. No Alembic migrations in v1.
 3. No direct persistence of source text, summaries, sentiments, or entities.
-4. No direct downstream `POST /signals` or `POST /sentiment` fanout in v1.
 5. No YouTube, CNBC, Reddit, or other source acquisition logic.
 
 ## 4. Core Behavior
@@ -75,12 +74,10 @@ flowchart LR
     B --> C[Pass 1: distill]
     C --> D[Pass 2: sentiment]
     C --> E[Pass 3: entities]
-    E --> F[Watchlist read API]
-    E --> G[Momentum read API]
+    D --> F[quant_sentiment POST /sentiment]
+    E --> G[quant_signals POST /signals]
     D --> H[Structured response]
     E --> H
-    F --> H
-    G --> H
 ```
 
 Peer services remain responsible for discovery, source storage, local persistence, and any final downstream fanout they still own.
@@ -127,9 +124,7 @@ Request:
     "include_sentiment": true,
     "include_entities": true,
     "include_watchlist": true,
-    "include_momentum": true,
     "watchlist_required": false,
-    "momentum_required": false,
     "max_chunk_chars": 12000
   }
 }
@@ -158,8 +153,6 @@ Response:
       "distill": 810,
       "sentiment": 115,
       "entities": 121,
-      "watchlist": 19,
-      "momentum": 22,
       "total": 1087
     },
     "token_usage": {
@@ -201,10 +194,7 @@ Response:
         "confidence": 0.8,
         "context": "positive iPhone commentary",
         "watchlist": {
-          "entries": []
-        },
-        "momentum": {
-          "latest": null
+          "entries": [{"signal_id": "signal:..."}]
         }
       }
     ]
@@ -249,43 +239,31 @@ Request:
   "source": "quant_youtube",
   "source_item_id": "abcdefghijk",
   "options": {
-    "include_watchlist": true,
-    "include_momentum": true
+    "include_watchlist": true
   }
 }
 ```
 
-## 8. Enrichment Contracts
+## 8. Delivery Contracts
 
-### Watchlist API
+### Sentiment API
 
-Use `quant_signals` read endpoints only:
+For every extracted sentiment observation, POST to `quant_sentiment`:
 
-1. `GET /watchlist?ticker=<TICKER>`
-2. `GET /watchlist/by-ticker/<TICKER>`
-3. optionally `GET /watchlist/<watchlist_entry_id>`
+1. `POST /sentiment`
+2. Include a stable idempotency key based on source, source item, subject, model, and prompt version.
 
-### Momentum API
+### Signals Watchlist API
 
-Use `quant_momentum` read endpoints only:
+For every resolved entity, POST to `quant_signals`:
 
-1. `GET /momentum/by-ticker/<TICKER>?limit=1`
-2. optionally `GET /momentum/latest?is_momentum=false`
-
-Minimum expected momentum fields:
-
-- `bar_date`
-- `close`
-- `momentum_5d`
-- `momentum_15d`
-- `momentum_30d`
-- `is_momentum`
-- `bars_available`
+1. `POST /signals`
+2. Include the resolved ticker, extraction context, and a stable idempotency key based on source, source item, ticker, model, and prompt version.
 
 ### Failure semantics
 
-1. If watchlist or momentum is unavailable and not required, return the primary extraction result plus a warning.
-2. If the caller marks an enrichment as required, return `503` with the standard error envelope.
+1. If a delivery API is unavailable and not required, return the primary extraction result plus a warning.
+2. If a required delivery API is unavailable, return `503` with the standard error envelope.
 
 ## 9. Error Envelope
 
@@ -356,7 +334,7 @@ HTTP semantics:
 
 ### Slice 4
 
-- watchlist and momentum enrichments
+- quant_sentiment and quant_signals delivery
 - optional dependency behavior
 
 ### Slice 5

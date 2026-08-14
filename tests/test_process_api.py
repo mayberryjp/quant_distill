@@ -5,10 +5,10 @@ from webtest import TestApp
 from quant_distill.api.app import create_app
 from quant_distill.domain.service import QuantDistillService
 from quant_distill.domain.stats import StatsCollector
-from tests.helpers import FakeLLM, FakeWatchlist
+from tests.helpers import FakeLLM, FakeSentiment, FakeWatchlist
 
 
-def _service(*, watchlist_fail: bool = False) -> QuantDistillService:
+def _service(*, watchlist_fail: bool = False, sentiment_fail: bool = False) -> QuantDistillService:
     settings_obj = type(
         "TestSettings",
         (),
@@ -18,19 +18,21 @@ def _service(*, watchlist_fail: bool = False) -> QuantDistillService:
             "sentiment_prompt_version": "v1",
             "entity_prompt_version": "v1",
             "distill_max_chunk_chars": 100,
-            "watchlist_enabled": True,
+            "sentiment_required": False,
         },
     )()
     return QuantDistillService(
         llm_client=FakeLLM(),
         watchlist_client=FakeWatchlist(should_fail=watchlist_fail),
+        sentiment_client=FakeSentiment(should_fail=sentiment_fail),
         stats=StatsCollector(),
         settings_obj=settings_obj,
     )
 
 
 def test_process_happy_path() -> None:
-    client = TestApp(create_app(service=_service()))
+    service = _service()
+    client = TestApp(create_app(service=service))
     response = client.post_json(
         "/v1/process",
         {
@@ -51,7 +53,9 @@ def test_process_happy_path() -> None:
     assert response.json["distillation"]["summary"].startswith("**Topic 1**")
     assert response.json["sentiment"]["observations"][0]["subject"] == "AAPL"
     assert response.json["entities"]["items"][0]["ticker"] == "AAPL"
-    assert response.json["entities"]["items"][0]["watchlist"]["entries"][0]["submitted_ticker"] == "AAPL"
+    assert response.json["entities"]["items"][0]["watchlist"]["entries"][0]["signal_id"] == "signal:AAPL"
+    assert service.sentiment_client.calls[0]["subject"] == "AAPL"
+    assert service.watchlist.calls[0]["ticker"] == "AAPL"
 
 
 def test_distill_validation_error() -> None:

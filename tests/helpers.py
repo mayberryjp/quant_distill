@@ -65,11 +65,28 @@ class FakeLLM:
 class FakeWatchlist:
     def __init__(self, *, should_fail: bool = False) -> None:
         self.should_fail = should_fail
+        self.calls: list[dict[str, Any]] = []
 
-    def get_entries(self, ticker: str) -> list[dict[str, Any]]:
+    def submit(self, **body: Any) -> str:
         if self.should_fail:
             raise httpx.ConnectError("failed")
-        return [{"watchlist_entry_id": f"watchlist:test:mention:{ticker.upper()}", "submitted_ticker": ticker.upper()}]
+        self.calls.append(body)
+        return f"signal:{body['ticker']}"
+
+    def readiness(self) -> tuple[bool, str]:
+        return True, "ok"
+
+
+class FakeSentiment:
+    def __init__(self, *, should_fail: bool = False) -> None:
+        self.should_fail = should_fail
+        self.calls: list[dict[str, Any]] = []
+
+    def deliver(self, **body: Any) -> str:
+        if self.should_fail:
+            raise httpx.ConnectError("failed")
+        self.calls.append(body)
+        return f"sentiment:{body['subject']}"
 
     def readiness(self) -> tuple[bool, str]:
         return True, "ok"
