@@ -10,7 +10,7 @@ It performs three structured passes:
 2. Sentiment extraction from that distillation.
 3. Entity extraction from that distillation, including company-to-ticker resolution.
 
-It is a stateless processing API. It does not own the source-of-truth datastore for transcripts, Reddit items, CNBC items, entities, or sentiments.
+It is a stateless processing API. It does not own the source-of-truth datastore for transcripts, Reddit items, CNBC items, entities, or sentiments. It records operational run metrics in its own PostgreSQL schema when configured.
 
 ## 2. Goals
 
@@ -22,9 +22,8 @@ It is a stateless processing API. It does not own the source-of-truth datastore 
 
 ## 3. Non-goals
 
-1. No owned Postgres schema in v1.
-2. No Alembic migrations in v1.
-3. No direct persistence of source text, summaries, sentiments, or entities.
+1. No persistence of source text, summaries, sentiments, or entities.
+2. No Alembic migrations shared with other projects.
 5. No YouTube, CNBC, Reddit, or other source acquisition logic.
 
 ## 4. Core Behavior

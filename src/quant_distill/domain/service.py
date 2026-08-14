@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import timezone
+from datetime import datetime, timezone
+import json
+import logging
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
@@ -25,10 +27,12 @@ from quant_distill.domain.schemas import (
 )
 from quant_distill.domain.stats import StatsCollector
 from quant_distill.repository.llm_client import OpenAICompatLLMClient
+from quant_distill.repository.run_metrics import RunMetricsRepository
 from quant_distill.repository.sentiment_client import SentimentClient
 from quant_distill.repository.watchlist_client import WatchlistClient
 
 SERVICE_NAME = "quant-distill-api"
+log = logging.getLogger("quant_distill.service")
 
 
 class DependencyUnavailableError(RuntimeError):
@@ -49,6 +53,10 @@ def _merge_usage(total: dict[str, int | float], usage: dict[str, Any]) -> None:
             total[key] = total.get(key, 0) + value
 
 
+def _output_chars(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, separators=(",", ":")))
+
+
 class QuantDistillService:
     def __init__(
         self,
@@ -56,6 +64,7 @@ class QuantDistillService:
         llm_client: Any,
         watchlist_client: Any | None = None,
         sentiment_client: Any | None = None,
+        run_metrics_repository: Any | None = None,
         stats: StatsCollector | None = None,
         settings_obj: Any = settings,
         now: Callable[[], object] | None = None,
@@ -63,6 +72,7 @@ class QuantDistillService:
         self.llm = llm_client
         self.watchlist = watchlist_client
         self.sentiment_client = sentiment_client
+        self.run_metrics = run_metrics_repository
         self.stats = stats or StatsCollector()
         self.settings = settings_obj
         self.now = now
@@ -110,6 +120,7 @@ class QuantDistillService:
     def distill(self, request: Any) -> dict[str, Any]:
         request_id = str(uuid4())
         endpoint = "/v1/distill"
+        started_at = datetime.now(timezone.utc)
         start = perf_counter()
         out, usage, chunk_count = distiller.distill(
             self.llm,
@@ -122,7 +133,7 @@ class QuantDistillService:
         self.stats.increment(f"requests:{endpoint}")
         self.stats.increment(f"success:{endpoint}")
         self.stats.record_latency(endpoint, elapsed)
-        return DistillEndpointResponse(
+        payload = DistillEndpointResponse(
             request_id=request_id,
             processing=ProcessingEnvelope(
                 model=self.settings.llm_model,
@@ -133,10 +144,24 @@ class QuantDistillService:
             ),
             distillation=DistillationEnvelope(**out.model_dump()),
         ).model_dump(mode="json")
+        self._record_run(
+            request_id=request_id,
+            endpoint=endpoint,
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            duration_ms=elapsed,
+            input_chars=len(request.text),
+            output_chars=_output_chars(payload),
+            token_usage=usage,
+            distill_prompt_version=self.settings.distill_prompt_version,
+        )
+        return payload
 
     def sentiment(self, request: SummaryRequest) -> dict[str, Any]:
         request_id = str(uuid4())
         endpoint = "/v1/sentiment"
+        started_at = datetime.now(timezone.utc)
         start = perf_counter()
         out, usage = sentiment.extract_sentiment(self.llm, request.summary)
         self.stats.mark_llm_success()
@@ -145,7 +170,7 @@ class QuantDistillService:
         self.stats.increment(f"requests:{endpoint}")
         self.stats.increment(f"success:{endpoint}")
         self.stats.record_latency(endpoint, elapsed)
-        return SentimentEndpointResponse(
+        payload = SentimentEndpointResponse(
             request_id=request_id,
             processing=ProcessingEnvelope(
                 model=self.settings.llm_model,
@@ -155,10 +180,24 @@ class QuantDistillService:
             ),
             sentiment=out,
         ).model_dump(mode="json")
+        self._record_run(
+            request_id=request_id,
+            endpoint=endpoint,
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            duration_ms=elapsed,
+            input_chars=len(request.summary),
+            output_chars=_output_chars(payload),
+            token_usage=usage,
+            sentiment_prompt_version=self.settings.sentiment_prompt_version,
+        )
+        return payload
 
     def entities(self, request: SummaryRequest) -> dict[str, Any]:
         request_id = str(uuid4())
         endpoint = "/v1/entities"
+        started_at = datetime.now(timezone.utc)
         start = perf_counter()
         out, usage = entities.extract_entities(self.llm, request.summary)
         self.stats.mark_llm_success()
@@ -168,7 +207,7 @@ class QuantDistillService:
         self.stats.increment(f"requests:{endpoint}")
         self.stats.increment(f"success:{endpoint}")
         self.stats.record_latency(endpoint, elapsed)
-        return EntitiesEndpointResponse(
+        payload = EntitiesEndpointResponse(
             request_id=request_id,
             processing=ProcessingEnvelope(
                 model=self.settings.llm_model,
@@ -179,10 +218,24 @@ class QuantDistillService:
             ),
             entities={"items": items},
         ).model_dump(mode="json")
+        self._record_run(
+            request_id=request_id,
+            endpoint=endpoint,
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            duration_ms=elapsed,
+            input_chars=len(request.summary),
+            output_chars=_output_chars(payload),
+            token_usage=usage,
+            entity_prompt_version=self.settings.entity_prompt_version,
+        )
+        return payload
 
     def process(self, request: ProcessRequest) -> dict[str, Any]:
         request_id = str(uuid4())
         endpoint = "/v1/process"
+        started_at = datetime.now(timezone.utc)
         started = perf_counter()
         total_usage: dict[str, int | float] = {}
         durations: dict[str, int] = {}
@@ -230,7 +283,7 @@ class QuantDistillService:
         self.stats.increment(f"success:{endpoint}")
         self.stats.record_latency(endpoint, durations["total"])
 
-        return ProcessResponse(
+        payload = ProcessResponse(
             request_id=request_id,
             service=SERVICE_NAME,
             source=SourceEnvelope(
@@ -257,6 +310,64 @@ class QuantDistillService:
             sentiment=sentiment_out,
             entities=entity_items,
         ).model_dump(mode="json")
+        self._record_run(
+            request_id=request_id,
+            endpoint=endpoint,
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            duration_ms=durations["total"],
+            input_chars=len(request.text),
+            output_chars=_output_chars(payload),
+            token_usage=total_usage,
+            distill_prompt_version=self.settings.distill_prompt_version,
+            sentiment_prompt_version=(
+                self.settings.sentiment_prompt_version if request.options.include_sentiment else None
+            ),
+            entity_prompt_version=(
+                self.settings.entity_prompt_version if request.options.include_entities else None
+            ),
+        )
+        return payload
+
+    def _record_run(
+        self,
+        *,
+        request_id: str,
+        endpoint: str,
+        source: str | None,
+        source_item_id: str | None,
+        started_at: datetime,
+        duration_ms: int,
+        input_chars: int,
+        output_chars: int,
+        token_usage: dict[str, Any],
+        distill_prompt_version: str | None = None,
+        sentiment_prompt_version: str | None = None,
+        entity_prompt_version: str | None = None,
+    ) -> None:
+        if self.run_metrics is None:
+            return
+        try:
+            self.run_metrics.record(
+                request_id=request_id,
+                endpoint=endpoint,
+                source=source,
+                source_item_id=source_item_id,
+                model=self.settings.llm_model,
+                distill_prompt_version=distill_prompt_version,
+                sentiment_prompt_version=sentiment_prompt_version,
+                entity_prompt_version=entity_prompt_version,
+                started_at=started_at,
+                completed_at=datetime.now(timezone.utc),
+                duration_ms=duration_ms,
+                input_chars=input_chars,
+                output_chars=output_chars,
+                token_usage=token_usage,
+                status="succeeded",
+            )
+        except Exception:
+            log.exception("run metrics write failed request_id=%s", request_id)
 
     def _enrich_entities(
         self,
@@ -367,8 +478,10 @@ def build_default_service() -> QuantDistillService:
             api_key=settings.sentiment_api_key,
             timeout=settings.sentiment_timeout,
         )
+    run_metrics = RunMetricsRepository(settings.database_url) if settings.database_url else None
     return QuantDistillService(
         llm_client=llm,
         watchlist_client=watchlist,
         sentiment_client=sentiment_client,
+        run_metrics_repository=run_metrics,
     )

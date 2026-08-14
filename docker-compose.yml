@@ -33,10 +33,12 @@ services:
       SIGNALS_TIMEOUT: "30"
       SIGNALS_REQUIRED: "false"
 
+      # Shared PostgreSQL database; apply migrations before starting the service.
+      DATABASE_URL: "postgresql+psycopg://quant_distill:quant_distill@postgres:5432/quant"
+
       HTTP_RETRIES: "3"
       RETRY_BACKOFF: "1.0"
       MAX_PAGE_SIZE: "100"
-      PREWARM_ENABLED: "false"
     ports:
       - "8021:8021"
     restart: unless-stopped

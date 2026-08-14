@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(extra="ignore", env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(extra="ignore")
 
     api_listen_address: str = Field("0.0.0.0", validation_alias="API_LISTEN_ADDRESS")  # nosec B104
     api_port: int = Field(8021, validation_alias="API_PORT")
@@ -37,10 +37,11 @@ class Settings(BaseSettings):
     signals_timeout: int = Field(30, validation_alias="SIGNALS_TIMEOUT")
     signals_required: bool = Field(False, validation_alias="SIGNALS_REQUIRED")
 
+    database_url: str = Field("", validation_alias="DATABASE_URL")
+
     http_retries: int = Field(3, validation_alias="HTTP_RETRIES")
     retry_backoff: float = Field(1.0, validation_alias="RETRY_BACKOFF")
     max_page_size: int = Field(100, validation_alias="MAX_PAGE_SIZE")
-    prewarm_enabled: bool = Field(False, validation_alias="PREWARM_ENABLED")
 
 
 settings = Settings()  # type: ignore[call-arg]

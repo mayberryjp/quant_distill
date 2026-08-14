@@ -5,7 +5,7 @@ from webtest import TestApp
 from quant_distill.api.app import create_app
 from quant_distill.domain.service import QuantDistillService
 from quant_distill.domain.stats import StatsCollector
-from tests.helpers import FakeLLM, FakeSentiment, FakeWatchlist
+from tests.helpers import FakeLLM, FakeRunMetrics, FakeSentiment, FakeWatchlist
 
 
 def _service(*, watchlist_fail: bool = False, sentiment_fail: bool = False) -> QuantDistillService:
@@ -105,3 +105,28 @@ def test_capabilities_and_stats() -> None:
     assert client.get("/capabilities").json["service"] == "quant-distill-api"
     stats = client.get("/stats").json
     assert stats["status"] == "ok"
+
+
+def test_process_records_run_metrics() -> None:
+    metrics = FakeRunMetrics()
+    service = _service()
+    service.run_metrics = metrics
+    client = TestApp(create_app(service=service))
+
+    client.post_json(
+        "/v1/process",
+        {
+            "source": "quant_youtube",
+            "source_type": "youtube",
+            "source_item_id": "abc123",
+            "text": "Apple looked strong.",
+            "metadata": {},
+        },
+    )
+
+    assert len(metrics.records) == 1
+    record = metrics.records[0]
+    assert record["endpoint"] == "/v1/process"
+    assert record["input_chars"] == len("Apple looked strong.")
+    assert record["output_chars"] > 0
+    assert record["token_usage"]["total_tokens"] == 27

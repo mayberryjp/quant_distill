@@ -90,3 +90,11 @@ class FakeSentiment:
 
     def readiness(self) -> tuple[bool, str]:
         return True, "ok"
+
+
+class FakeRunMetrics:
+    def __init__(self) -> None:
+        self.records: list[dict[str, Any]] = []
+
+    def record(self, **record: Any) -> None:
+        self.records.append(record)
