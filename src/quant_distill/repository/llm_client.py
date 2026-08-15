@@ -20,6 +20,12 @@ class OpenAICompatLLMClient:
         client: httpx.Client | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        # Accept either the API root (.../v1) or the full chat completions endpoint.
+        self.chat_url = (
+            self.base_url
+            if self.base_url.endswith("/chat/completions")
+            else f"{self.base_url}/chat/completions"
+        )
         self.model = model
         self.max_tokens = max_tokens
         self.json_mode = json_mode
@@ -54,7 +60,7 @@ class OpenAICompatLLMClient:
         }
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
-        response = self._client.post(self.base_url, json=body)
+        response = self._client.post(self.chat_url, json=body)
         response.raise_for_status()
         payload = response.json()
         content = self._extract_content(payload)
@@ -63,7 +69,7 @@ class OpenAICompatLLMClient:
 
     def readiness(self) -> tuple[bool, str]:
         try:
-            response = self._client.get(self.base_url.rsplit("/", 1)[0])
+            response = self._client.get(self.chat_url.rsplit("/chat/completions", 1)[0])
             return response.status_code < 500, f"http {response.status_code}"
         except httpx.HTTPError as exc:
             return False, type(exc).__name__
