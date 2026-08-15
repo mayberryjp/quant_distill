@@ -27,6 +27,16 @@ def create_app(
     app.title = SERVICE_NAME
     service = service or build_default_service()
 
+    @app.hook("after_request")
+    def add_cors_headers() -> None:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+
+    def cors_preflight() -> str:
+        response.status = 204
+        return ""
+
     register_health_routes(
         app,
         service_name=SERVICE_NAME,
@@ -38,6 +48,17 @@ def create_app(
         stats_handler=stats_handler or service.stats_snapshot,
     )
     register_process_routes(app, service=service)
+    for path in (
+        "/health",
+        "/ready",
+        "/capabilities",
+        "/stats",
+        "/v1/distill",
+        "/v1/sentiment",
+        "/v1/entities",
+        "/v1/process",
+    ):
+        app.route(path, method="OPTIONS", callback=cors_preflight)
 
     @app.error(404)
     def not_found(_err: Exception) -> str:
