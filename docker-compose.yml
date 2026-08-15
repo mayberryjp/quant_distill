@@ -11,7 +11,7 @@ services:
       LLM_BASE_URL: "http://ollama:11434/v1/chat/completions"
       LLM_MODEL: "llama3.1"
       LLM_API_KEY: ""
-      LLM_TIMEOUT: "60"
+      LLM_TIMEOUT: "300"
       LLM_MAX_TOKENS: "4096"
       LLM_JSON_MODE: "true"
       LLM_NUM_CTX: "16384"

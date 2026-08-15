@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
     llm_model: str = Field("llama3.1", validation_alias="LLM_MODEL")
     llm_api_key: str = Field("", validation_alias="LLM_API_KEY")
-    llm_timeout: int = Field(60, validation_alias="LLM_TIMEOUT")
+    llm_timeout: int = Field(300, validation_alias="LLM_TIMEOUT")
     llm_max_tokens: int = Field(4096, validation_alias="LLM_MAX_TOKENS")
     llm_json_mode: bool = Field(True, validation_alias="LLM_JSON_MODE")
     llm_num_ctx: int = Field(16384, validation_alias="LLM_NUM_CTX")

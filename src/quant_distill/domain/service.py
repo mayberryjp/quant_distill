@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
 import logging
 from time import perf_counter
 from typing import Any
 from uuid import uuid4
+
+import httpx
 
 from quant_distill.config import settings
 from quant_distill.domain import distiller, entities, sentiment
@@ -55,6 +58,18 @@ def _merge_usage(total: dict[str, int | float], usage: dict[str, Any]) -> None:
 
 def _output_chars(payload: dict[str, Any]) -> int:
     return len(json.dumps(payload, separators=(",", ":")))
+
+
+@contextmanager
+def _llm_guard(stage: str) -> Iterator[None]:
+    try:
+        yield
+    except httpx.HTTPError as exc:
+        raise DependencyUnavailableError(
+            "dependency_unavailable",
+            "required dependency unavailable",
+            f"llm {stage} call failed: {type(exc).__name__}",
+        ) from exc
 
 
 class QuantDistillService:
@@ -122,11 +137,12 @@ class QuantDistillService:
         endpoint = "/v1/distill"
         started_at = datetime.now(timezone.utc)
         start = perf_counter()
-        out, usage, chunk_count = distiller.distill(
-            self.llm,
-            request.text,
-            max_chunk_chars=request.options.max_chunk_chars or self.settings.distill_max_chunk_chars,
-        )
+        with _llm_guard("distill"):
+            out, usage, chunk_count = distiller.distill(
+                self.llm,
+                request.text,
+                max_chunk_chars=request.options.max_chunk_chars or self.settings.distill_max_chunk_chars,
+            )
         self.stats.mark_llm_success()
         elapsed = _ms(start)
         self.stats.increment("requests_total")
@@ -163,7 +179,8 @@ class QuantDistillService:
         endpoint = "/v1/sentiment"
         started_at = datetime.now(timezone.utc)
         start = perf_counter()
-        out, usage = sentiment.extract_sentiment(self.llm, request.summary)
+        with _llm_guard("sentiment"):
+            out, usage = sentiment.extract_sentiment(self.llm, request.summary)
         self.stats.mark_llm_success()
         elapsed = _ms(start)
         self.stats.increment("requests_total")
@@ -199,7 +216,8 @@ class QuantDistillService:
         endpoint = "/v1/entities"
         started_at = datetime.now(timezone.utc)
         start = perf_counter()
-        out, usage = entities.extract_entities(self.llm, request.summary)
+        with _llm_guard("entities"):
+            out, usage = entities.extract_entities(self.llm, request.summary)
         self.stats.mark_llm_success()
         items, warnings = self._enrich_entities(out.entities, request.options)
         elapsed = _ms(start)
@@ -242,11 +260,12 @@ class QuantDistillService:
         warnings: list[str] = []
 
         distill_start = perf_counter()
-        distill_out, distill_usage, chunk_count = distiller.distill(
-            self.llm,
-            request.text,
-            max_chunk_chars=request.options.max_chunk_chars or self.settings.distill_max_chunk_chars,
-        )
+        with _llm_guard("distill"):
+            distill_out, distill_usage, chunk_count = distiller.distill(
+                self.llm,
+                request.text,
+                max_chunk_chars=request.options.max_chunk_chars or self.settings.distill_max_chunk_chars,
+            )
         self.stats.mark_llm_success()
         durations["distill"] = _ms(distill_start)
         _merge_usage(total_usage, distill_usage)
@@ -254,7 +273,8 @@ class QuantDistillService:
         sentiment_out = None
         if request.options.include_sentiment:
             sent_start = perf_counter()
-            sentiment_out, sent_usage = sentiment.extract_sentiment(self.llm, distill_out.summary)
+            with _llm_guard("sentiment"):
+                sentiment_out, sent_usage = sentiment.extract_sentiment(self.llm, distill_out.summary)
             self.stats.mark_llm_success()
             durations["sentiment"] = _ms(sent_start)
             _merge_usage(total_usage, sent_usage)
@@ -263,7 +283,8 @@ class QuantDistillService:
         entity_items = None
         if request.options.include_entities:
             ent_start = perf_counter()
-            entity_out, ent_usage = entities.extract_entities(self.llm, distill_out.summary)
+            with _llm_guard("entities"):
+                entity_out, ent_usage = entities.extract_entities(self.llm, distill_out.summary)
             self.stats.mark_llm_success()
             items, entity_warnings = self._enrich_entities(
                 entity_out.entities,
@@ -463,6 +484,8 @@ def build_default_service() -> QuantDistillService:
         max_tokens=settings.llm_max_tokens,
         json_mode=settings.llm_json_mode,
         num_ctx=settings.llm_num_ctx,
+        retries=settings.http_retries,
+        backoff=settings.retry_backoff,
     )
     watchlist = None
     if settings.signals_api_url:

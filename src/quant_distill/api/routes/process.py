@@ -31,7 +31,10 @@ def register_process_routes(app: Bottle, *, service: Any) -> None:
             payload = DistillRequest.model_validate(request.json or {})
         except ValidationError as exc:
             return _error(422, "validation_error", "Invalid request", _validation_detail(exc))
-        return service.distill(payload)
+        try:
+            return service.distill(payload)
+        except DependencyUnavailableError as exc:
+            return _error(503, exc.code, exc.error, exc.detail)
 
     @app.post("/v1/sentiment")
     def sentiment_route() -> dict[str, Any]:
@@ -39,7 +42,10 @@ def register_process_routes(app: Bottle, *, service: Any) -> None:
             payload = SummaryRequest.model_validate(request.json or {})
         except ValidationError as exc:
             return _error(422, "validation_error", "Invalid request", _validation_detail(exc))
-        return service.sentiment(payload)
+        try:
+            return service.sentiment(payload)
+        except DependencyUnavailableError as exc:
+            return _error(503, exc.code, exc.error, exc.detail)
 
     @app.post("/v1/entities")
     def entities_route() -> dict[str, Any]:
