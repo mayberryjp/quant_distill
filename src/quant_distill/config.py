@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     http_retries: int = Field(3, validation_alias="HTTP_RETRIES")
     retry_backoff: float = Field(1.0, validation_alias="RETRY_BACKOFF")
     max_page_size: int = Field(100, validation_alias="MAX_PAGE_SIZE")
+    max_request_bytes: int = Field(16_777_216, validation_alias="MAX_REQUEST_BYTES")
 
 
 settings = Settings()  # type: ignore[call-arg]

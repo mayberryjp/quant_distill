@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from bottle import Bottle, request, response
+from bottle import Bottle, BaseRequest, request, response
 
 from quant_distill.api.routes.health import register_health_routes
 from quant_distill.api.routes.metadata import register_metadata_routes
 from quant_distill.api.routes.process import register_process_routes
 from quant_distill.api.routes.runs import register_run_routes
+from quant_distill.config import settings
 from quant_distill.domain.schemas import ErrorEnvelope
 from quant_distill.domain.service import build_default_service
 from quant_distill.logging import configure_logging
@@ -25,6 +26,8 @@ def create_app(
     queue_handler: Any = None,
 ) -> Bottle:
     configure_logging()
+    # bottle buffers the whole body in memory and rejects anything over MEMFILE_MAX (100KB default).
+    BaseRequest.MEMFILE_MAX = settings.max_request_bytes
     app = Bottle()
     app.title = SERVICE_NAME
     service = service or build_default_service()
@@ -87,6 +90,17 @@ def create_app(
                 code="not_found",
                 error="not found",
                 detail=f"route {request.path} does not exist",
+            ).model_dump(mode="json")
+        )
+
+    @app.error(413)
+    def payload_too_large(_err: Exception) -> str:
+        response.content_type = "application/json"
+        return json.dumps(
+            ErrorEnvelope(
+                code="payload_too_large",
+                error="request entity too large",
+                detail=f"request body exceeds {settings.max_request_bytes} bytes",
             ).model_dump(mode="json")
         )
 

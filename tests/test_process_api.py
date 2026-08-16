@@ -178,6 +178,22 @@ def test_runs_without_store_returns_503() -> None:
     assert client.get("/v1/runs", status=503).json["code"] == "dependency_unavailable"
 
 
+def test_large_payload_is_accepted() -> None:
+    client = TestApp(create_app(service=_service()))
+    response = client.post_json(
+        "/v1/process",
+        {
+            "source": "quant_cnbc",
+            "source_type": "broadcast",
+            "source_item_id": "big",
+            "text": "Apple looked strong. " * 10000,
+            "metadata": {},
+            "options": {"include_sentiment": False, "include_entities": False},
+        },
+    )
+    assert response.status_code == 200
+
+
 def test_failed_run_is_recorded() -> None:
     metrics = FakeRunMetrics()
     service = _service(watchlist_fail=True)
