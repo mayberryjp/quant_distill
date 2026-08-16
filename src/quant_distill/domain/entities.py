@@ -9,10 +9,11 @@ ENTITY_SYSTEM = (
     "summary. Return ONLY a JSON "
     "object: "
     '{"entities": [{"raw_mention": "as said", '
-    '"entity_type": "ticker|company", "company_name": "normalized name", '
+    '"entity_type": "<one of: ticker, company>", "company_name": "normalized name", '
     '"ticker": "RESOLVED_TICKER or null", "speaker": "who mentioned it or null", '
-    '"direction": "long|short|neutral or null", "confidence": 0.0..1.0, '
+    '"direction": "<one of: long, short, neutral> or null", "confidence": 0.0..1.0, '
     '"context": "short quote or rationale"}]}. '
+    "Each field must contain exactly one value, never a list of the options. "
     "Resolve company names to their US stock ticker where possible; if you cannot confidently "
     "resolve a ticker, set ticker to null."
 )

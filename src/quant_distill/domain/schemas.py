@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -10,6 +11,17 @@ def _clamp(value: float | None, lo: float, hi: float) -> float | None:
     if value is None:
         return None
     return max(lo, min(hi, value))
+
+
+def _first_choice(value: object, allowed: set[str], default: str | None) -> object:
+    """Models often echo the prompt's option list ("ticker|sector"); take the first valid token."""
+    if not isinstance(value, str):
+        return value if value is not None else default
+    for token in re.split(r"[|/,]", value):
+        candidate = token.strip().lower()
+        if candidate in allowed:
+            return candidate
+    return default
 
 
 class ErrorEnvelope(BaseModel):
@@ -168,6 +180,16 @@ class SentimentObservation(BaseModel):
     def _norm_subject(cls, value: str) -> str:
         return (value or "").strip() or "ALL"
 
+    @field_validator("subject_type", mode="before")
+    @classmethod
+    def _coerce_subject_type(cls, value: object) -> object:
+        return _first_choice(value, {"ticker", "sector", "theme", "market"}, "market")
+
+    @field_validator("sentiment_label", mode="before")
+    @classmethod
+    def _coerce_label(cls, value: object) -> object:
+        return _first_choice(value, {"bullish", "bearish", "neutral"}, "neutral")
+
     @field_validator("sentiment_score", mode="before")
     @classmethod
     def _clamp_score(cls, value: float | None) -> float | None:
@@ -204,20 +226,12 @@ class EntityMention(BaseModel):
     @field_validator("entity_type", mode="before")
     @classmethod
     def _coerce_entity_type(cls, value: object) -> object:
-        if value in (None, ""):
-            return "company"
-        if value not in {"ticker", "company"}:
-            return "company"
-        return value
+        return _first_choice(value, {"ticker", "company"}, "company")
 
     @field_validator("direction", mode="before")
     @classmethod
     def _coerce_direction(cls, value: object) -> object:
-        if value in (None, ""):
-            return None
-        if value not in {"long", "short", "neutral"}:
-            return None
-        return value
+        return _first_choice(value, {"long", "short", "neutral"}, None)
 
     @field_validator("ticker")
     @classmethod

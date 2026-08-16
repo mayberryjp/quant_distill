@@ -7,11 +7,12 @@ from quant_distill.domain.schemas import SentimentOutput
 SENTIMENT_SYSTEM = (
     "You are a market-sentiment classifier. Given a distilled summary, "
     "return ONLY a JSON object: "
-    '{"observations": [{"subject_type": "ticker|sector|theme|market", '
+    '{"observations": [{"subject_type": "<one of: ticker, sector, theme, market>", '
     '"subject": "AAPL or sector/theme name or ALL", '
-    '"sentiment_label": "bullish|bearish|neutral", '
+    '"sentiment_label": "<one of: bullish, bearish, neutral>", '
     '"sentiment_score": -1.0..1.0, "confidence": 0.0..1.0, '
-    '"horizon": "intraday|1d|5d|30d", "reason": "short rationale"}]}. '
+    '"horizon": "<one of: intraday, 1d, 5d, 30d>", "reason": "short rationale"}]}. '
+    "Each field must contain exactly one value, never a list of the options. "
     "Include one observation per ticker/sector/theme discussed, plus one "
     'subject_type "market" with subject "ALL" for the overall tone.'
 )
