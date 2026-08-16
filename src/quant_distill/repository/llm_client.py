@@ -2,12 +2,84 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
 import httpx
 
 log = logging.getLogger("quant_distill.llm_client")
+
+
+def _strip_fences(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    stripped = re.sub(r"^```[a-zA-Z]*\s*", "", stripped)
+    if stripped.endswith("```"):
+        stripped = stripped[: -len("```")]
+    return stripped.strip()
+
+
+def _close_truncated(text: str) -> str | None:
+    """Rebuild a JSON object that was cut off mid-generation by closing open structures."""
+    depth = 0
+    in_string = False
+    escaped = False
+    last_safe: int | None = None
+    stack: list[str] = []
+
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "{[":
+            stack.append("}" if char == "{" else "]")
+            depth += 1
+        elif char in "}]":
+            if not stack:
+                return None
+            stack.pop()
+            depth -= 1
+            if depth == 0:
+                return text[: index + 1]
+        elif char == "," and depth > 0:
+            last_safe = index
+
+    if not stack:
+        return None
+    # Drop the partial trailing element, then close every structure still open.
+    truncated = text[:last_safe] if last_safe is not None else text.rstrip()
+    return truncated + "".join(reversed(stack))
+
+
+def _parse_json_object(content: str) -> dict[str, Any]:
+    candidates = [content, _strip_fences(content)]
+    start = content.find("{")
+    end = content.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(content[start : end + 1])
+    repaired = _close_truncated(_strip_fences(content))
+    if repaired:
+        candidates.append(repaired)
+
+    for candidate in candidates:
+        if not candidate or not candidate.strip():
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError(f"llm response was not valid json ({len(content)} chars)")
 
 
 class OpenAICompatLLMClient:
@@ -45,7 +117,7 @@ class OpenAICompatLLMClient:
         timeouts = httpx.Timeout(timeout, connect=min(10.0, float(timeout)))
         self._client = client or httpx.Client(timeout=timeouts, headers=headers)
 
-    def _extract_content(self, payload: dict[str, Any]) -> str:
+    def _extract_content(self, payload: dict[str, Any]) -> tuple[str, str | None]:
         choices = payload.get("choices") or []
         if not choices:
             raise ValueError("llm response missing choices")
@@ -55,7 +127,7 @@ class OpenAICompatLLMClient:
             content = "".join(str(item.get("text", "")) for item in content if isinstance(item, dict))
         if not isinstance(content, str) or not content.strip():
             raise ValueError("llm response missing message content")
-        return content
+        return content, choices[0].get("finish_reason")
 
     def complete_json(self, system: str, user: str) -> tuple[dict[str, Any], dict[str, Any]]:
         body: dict[str, Any] = {
@@ -70,10 +142,37 @@ class OpenAICompatLLMClient:
         }
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
-        payload = self._post_with_retry(body)
-        content = self._extract_content(payload)
-        usage = payload.get("usage") or {}
-        return json.loads(content), usage
+
+        last_exc: Exception | None = None
+        for attempt in range(1, self.retries + 1):
+            payload = self._post_with_retry(body)
+            content, finish_reason = self._extract_content(payload)
+            usage = payload.get("usage") or {}
+            try:
+                return _parse_json_object(content), usage
+            except ValueError as exc:
+                last_exc = exc
+                if finish_reason == "length":
+                    log.warning(
+                        "llm response truncated at max_tokens=%s; raise LLM_MAX_TOKENS or lower "
+                        "DISTILL_MAX_CHUNK_CHARS",
+                        self.max_tokens,
+                    )
+                if attempt == self.retries:
+                    break
+                delay = self.backoff * (2 ** (attempt - 1))
+                log.warning(
+                    "llm returned unparseable json (attempt %s/%s, finish_reason=%s, %s chars); "
+                    "retrying in %.1fs",
+                    attempt,
+                    self.retries,
+                    finish_reason,
+                    len(content),
+                    delay,
+                )
+                time.sleep(delay)
+        assert last_exc is not None
+        raise last_exc
 
     def _post_with_retry(self, body: dict[str, Any]) -> dict[str, Any]:
         last_exc: Exception | None = None
