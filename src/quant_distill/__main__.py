@@ -1,12 +1,39 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from waitress import create_server
 
-from quant_distill.api.app import app
+from quant_distill.api.app import app, service
 from quant_distill.config import settings
 from quant_distill.domain.stats import set_server_info_provider
+from quant_distill.workers.job_worker import JobWorker
+
+log = logging.getLogger("quant_distill.main")
+
+
+def _start_job_workers() -> list[JobWorker]:
+    if service.jobs is None:
+        log.warning("job store not configured; /v1/process submissions will be rejected")
+        return []
+    if settings.job_requeue_running_on_start:
+        # A previous process may have died mid-job, leaving rows stuck in 'running'.
+        requeued = service.jobs.requeue_stale_running()
+        if requeued:
+            log.warning("requeued %s job(s) left running by a previous process", requeued)
+
+    workers = []
+    for index in range(max(1, settings.job_workers)):
+        worker = JobWorker(
+            jobs_repository=service.jobs,
+            service=service,
+            poll_interval=settings.job_poll_interval,
+            name=f"job-worker-{index + 1}",
+        )
+        worker.start()
+        workers.append(worker)
+    return workers
 
 
 def main() -> None:
@@ -32,6 +59,7 @@ def main() -> None:
         return info
 
     set_server_info_provider(server_info)
+    _start_job_workers()
     server.run()
 
 

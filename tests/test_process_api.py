@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
 from webtest import TestApp
 
 from quant_distill.api.app import create_app
 from quant_distill.domain.service import QuantDistillService
 from quant_distill.domain.stats import StatsCollector
-from tests.helpers import FakeLLM, FakeRunMetrics, FakeSentiment, FakeWatchlist
+from quant_distill.workers.job_worker import JobWorker
+from tests.helpers import FakeJobs, FakeLLM, FakeRunMetrics, FakeSentiment, FakeWatchlist
 
 
 def _service(*, watchlist_fail: bool = False, sentiment_fail: bool = False) -> QuantDistillService:
@@ -26,16 +29,30 @@ def _service(*, watchlist_fail: bool = False, sentiment_fail: bool = False) -> Q
         llm_client=FakeLLM(),
         watchlist_client=FakeWatchlist(should_fail=watchlist_fail),
         sentiment_client=FakeSentiment(should_fail=sentiment_fail),
+        jobs_repository=FakeJobs(),
         stats=StatsCollector(),
         settings_obj=settings_obj,
     )
 
 
+def _drain(service: QuantDistillService) -> None:
+    worker = JobWorker(jobs_repository=service.jobs, service=service)
+    while worker.run_once():
+        pass
+
+
+def _submit(client: TestApp, body: dict[str, Any]) -> str:
+    accepted = client.post_json("/v1/process", body, status=202).json
+    assert accepted["status"] == "accepted"
+    assert accepted["job_status"] == "queued"
+    return str(accepted["job_id"])
+
+
 def test_process_happy_path() -> None:
     service = _service()
     client = TestApp(create_app(service=service))
-    response = client.post_json(
-        "/v1/process",
+    job_id = _submit(
+        client,
         {
             "source": "quant_youtube",
             "source_type": "youtube",
@@ -49,12 +66,18 @@ def test_process_happy_path() -> None:
             },
         },
     )
-    assert response.status_code == 200
-    assert response.json["status"] == "ok"
-    assert response.json["distillation"]["summary"].startswith("**Topic 1**")
-    assert response.json["sentiment"]["observations"][0]["subject"] == "AAPL"
-    assert response.json["entities"]["items"][0]["ticker"] == "AAPL"
-    assert response.json["entities"]["items"][0]["watchlist"]["entries"][0]["signal_id"] == "signal:AAPL"
+    assert client.get(f"/v1/jobs/{job_id}").json["status"] == "queued"
+
+    _drain(service)
+
+    job = client.get(f"/v1/jobs/{job_id}").json
+    assert job["status"] == "succeeded"
+    result = job["result"]
+    assert result["status"] == "ok"
+    assert result["distillation"]["summary"].startswith("**Topic 1**")
+    assert result["sentiment"]["observations"][0]["subject"] == "AAPL"
+    assert result["entities"]["items"][0]["ticker"] == "AAPL"
+    assert result["entities"]["items"][0]["watchlist"]["entries"][0]["signal_id"] == "signal:AAPL"
     assert service.sentiment_client.calls[0]["subject"] == "AAPL"
     assert service.watchlist.calls[0]["ticker"] == "AAPL"
 
@@ -78,10 +101,11 @@ def test_entities_optional_enrichment_degrades() -> None:
     assert len(response.json["processing"]["warnings"]) == 1
 
 
-def test_process_required_enrichment_503() -> None:
-    client = TestApp(create_app(service=_service(watchlist_fail=True)))
-    response = client.post_json(
-        "/v1/process",
+def test_process_required_enrichment_marks_job_failed() -> None:
+    service = _service(watchlist_fail=True)
+    client = TestApp(create_app(service=service))
+    job_id = _submit(
+        client,
         {
             "source": "quant_youtube",
             "source_type": "youtube",
@@ -94,6 +118,26 @@ def test_process_required_enrichment_503() -> None:
                 "include_watchlist": True,
                 "watchlist_required": True,
             },
+        },
+    )
+    _drain(service)
+
+    job = client.get(f"/v1/jobs/{job_id}").json
+    assert job["status"] == "failed"
+    assert "watchlist enrichment failed" in job["error"]
+
+
+def test_process_without_job_store_returns_503() -> None:
+    service = _service()
+    service.jobs = None
+    client = TestApp(create_app(service=service))
+    response = client.post_json(
+        "/v1/process",
+        {
+            "source": "quant_youtube",
+            "source_type": "youtube",
+            "source_item_id": "abc",
+            "text": "Apple looked strong.",
         },
         status=503,
     )
@@ -125,8 +169,8 @@ def test_process_records_run_metrics() -> None:
     service.run_metrics = metrics
     client = TestApp(create_app(service=service))
 
-    client.post_json(
-        "/v1/process",
+    _submit(
+        client,
         {
             "source": "quant_youtube",
             "source_type": "youtube",
@@ -135,6 +179,7 @@ def test_process_records_run_metrics() -> None:
             "metadata": {},
         },
     )
+    _drain(service)
 
     assert len(metrics.records) == 1
     record = metrics.records[0]
@@ -149,8 +194,8 @@ def test_runs_listing_and_detail() -> None:
     service = _service()
     service.run_metrics = metrics
     client = TestApp(create_app(service=service))
-    client.post_json(
-        "/v1/process",
+    _submit(
+        client,
         {
             "source": "quant_youtube",
             "source_type": "youtube",
@@ -159,6 +204,7 @@ def test_runs_listing_and_detail() -> None:
             "metadata": {},
         },
     )
+    _drain(service)
 
     listing = client.get("/v1/runs?source=quant_youtube&limit=10").json
     assert listing["total"] == 1
@@ -174,14 +220,17 @@ def test_runs_listing_and_detail() -> None:
 
 
 def test_runs_without_store_returns_503() -> None:
-    client = TestApp(create_app(service=_service()))
+    service = _service()
+    service.run_metrics = None
+    client = TestApp(create_app(service=service))
     assert client.get("/v1/runs", status=503).json["code"] == "dependency_unavailable"
 
 
 def test_large_payload_is_accepted() -> None:
-    client = TestApp(create_app(service=_service()))
-    response = client.post_json(
-        "/v1/process",
+    service = _service()
+    client = TestApp(create_app(service=service))
+    job_id = _submit(
+        client,
         {
             "source": "quant_cnbc",
             "source_type": "broadcast",
@@ -191,7 +240,31 @@ def test_large_payload_is_accepted() -> None:
             "options": {"include_sentiment": False, "include_entities": False},
         },
     )
-    assert response.status_code == 200
+    _drain(service)
+    assert client.get(f"/v1/jobs/{job_id}").json["status"] == "succeeded"
+
+
+def test_jobs_listing_filters_by_status() -> None:
+    service = _service()
+    client = TestApp(create_app(service=service))
+    _submit(
+        client,
+        {
+            "source": "quant_cnbc",
+            "source_type": "broadcast",
+            "source_item_id": "abc",
+            "text": "Apple looked strong.",
+            "options": {"include_sentiment": False, "include_entities": False},
+        },
+    )
+    assert client.get("/v1/jobs?status=queued").json["total"] == 1
+    assert client.get("/queue").json["jobs"] == {"queued": 1}
+
+    _drain(service)
+
+    assert client.get("/v1/jobs?status=succeeded").json["total"] == 1
+    assert client.get("/v1/jobs?status=queued").json["total"] == 0
+    assert client.get("/v1/jobs/missing", status=404).json["code"] == "not_found"
 
 
 def test_failed_run_is_recorded() -> None:
@@ -199,8 +272,8 @@ def test_failed_run_is_recorded() -> None:
     service = _service(watchlist_fail=True)
     service.run_metrics = metrics
     client = TestApp(create_app(service=service))
-    client.post_json(
-        "/v1/process",
+    _submit(
+        client,
         {
             "source": "quant_youtube",
             "source_type": "youtube",
@@ -209,8 +282,8 @@ def test_failed_run_is_recorded() -> None:
             "metadata": {},
             "options": {"include_entities": True, "include_watchlist": True, "watchlist_required": True},
         },
-        status=503,
     )
+    _drain(service)
 
     assert len(metrics.records) == 1
     record = metrics.records[0]

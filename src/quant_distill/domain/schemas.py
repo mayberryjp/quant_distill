@@ -99,6 +99,46 @@ class RunListResponse(BaseModel):
     items: list[RunRecord] = Field(default_factory=list)
 
 
+class JobQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["queued", "running", "succeeded", "failed"] | None = None
+    source: str | None = None
+    source_item_id: str | None = None
+    limit: int = Field(50, ge=1, le=1000)
+    offset: int = Field(0, ge=0)
+    order: Literal["asc", "desc"] = "desc"
+
+
+class JobAccepted(BaseModel):
+    status: Literal["accepted"] = "accepted"
+    job_id: str
+    job_status: Literal["queued"] = "queued"
+    status_url: str
+
+
+class JobRecord(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    job_id: str
+    endpoint: str
+    status: Literal["queued", "running", "succeeded", "failed"]
+    source: str | None = None
+    source_item_id: str | None = None
+    attempts: int = 0
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: str | None = None
+    result: dict[str, Any] | None = None
+
+
+class JobListResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    total: int
+    limit: int
+    offset: int
+    items: list[JobRecord] = Field(default_factory=list)
+
+
 class Segment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     speaker: str | None = None

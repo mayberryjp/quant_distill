@@ -75,6 +75,7 @@ def create_app(
         "/stats",
         "/queue",
         "/v1/runs",
+        "/v1/jobs",
         "/v1/distill",
         "/v1/sentiment",
         "/v1/entities",
@@ -107,4 +108,5 @@ def create_app(
     return app
 
 
-app = create_app()
+service = build_default_service()
+app = create_app(service=service)

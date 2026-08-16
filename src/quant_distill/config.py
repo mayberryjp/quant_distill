@@ -45,5 +45,9 @@ class Settings(BaseSettings):
     max_page_size: int = Field(100, validation_alias="MAX_PAGE_SIZE")
     max_request_bytes: int = Field(16_777_216, validation_alias="MAX_REQUEST_BYTES")
 
+    job_workers: int = Field(1, validation_alias="JOB_WORKERS")
+    job_poll_interval: float = Field(2.0, validation_alias="JOB_POLL_INTERVAL")
+    job_requeue_running_on_start: bool = Field(True, validation_alias="JOB_REQUEUE_RUNNING_ON_START")
+
 
 settings = Settings()  # type: ignore[call-arg]

@@ -83,6 +83,9 @@ Peer services remain responsible for discovery, source storage, local persistenc
 
 ## 6. HTTP API
 
+Consumers of the asynchronous `/v1/process` flow should read
+[ASYNC_PROCESS_API.md](ASYNC_PROCESS_API.md) for the submit/poll contract.
+
 ### Operational endpoints
 
 | Method | Path | Purpose |
@@ -97,7 +100,9 @@ Peer services remain responsible for discovery, source storage, local persistenc
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/process` | Full pipeline: text -> distillation + sentiment + entities + optional enrichments |
+| POST | `/v1/process` | Full pipeline, asynchronous: enqueues a job and returns `202` with a `job_id` |
+| GET | `/v1/jobs/{job_id}` | Job status; carries the full pipeline result once `succeeded` |
+| GET | `/v1/jobs` | Job list with status/source filters and paging |
 | POST | `/v1/distill` | Distillation only |
 | POST | `/v1/sentiment` | Sentiment from an existing summary |
 | POST | `/v1/entities` | Entity extraction from an existing summary |

@@ -19,6 +19,10 @@ from quant_distill.domain.schemas import (
     EntityMention,
     EntitiesEndpointResponse,
     EnrichedEntity,
+    JobAccepted,
+    JobListResponse,
+    JobQuery,
+    JobRecord,
     ProcessRequest,
     ProcessOptions,
     ProcessResponse,
@@ -32,6 +36,7 @@ from quant_distill.domain.schemas import (
     WatchlistEnrichment,
 )
 from quant_distill.domain.stats import StatsCollector
+from quant_distill.repository.jobs import JobsRepository
 from quant_distill.repository.llm_client import OpenAICompatLLMClient
 from quant_distill.repository.run_metrics import RunMetricsRepository
 from quant_distill.repository.sentiment_client import SentimentClient
@@ -83,6 +88,7 @@ class QuantDistillService:
         watchlist_client: Any | None = None,
         sentiment_client: Any | None = None,
         run_metrics_repository: Any | None = None,
+        jobs_repository: Any | None = None,
         stats: StatsCollector | None = None,
         settings_obj: Any = settings,
         now: Callable[[], object] | None = None,
@@ -91,6 +97,7 @@ class QuantDistillService:
         self.watchlist = watchlist_client
         self.sentiment_client = sentiment_client
         self.run_metrics = run_metrics_repository
+        self.jobs = jobs_repository
         self.stats = stats or StatsCollector()
         self.settings = settings_obj
         self.now = now
@@ -137,6 +144,14 @@ class QuantDistillService:
         else:
             dependencies.append({"name": "run_metrics", "status": "disabled", "detail": None})
 
+        if self.jobs is not None:
+            j_ok, j_detail = self.jobs.readiness()
+            dependencies.append(
+                {"name": "jobs", "status": "ok" if j_ok else "unavailable", "detail": j_detail}
+            )
+        else:
+            dependencies.append({"name": "jobs", "status": "disabled", "detail": None})
+
         overall_ok = all(dep["status"] != "unavailable" for dep in dependencies if dep["name"] == "llm")
         return {"ok": overall_ok, "dependencies": dependencies}
 
@@ -144,7 +159,80 @@ class QuantDistillService:
         return self.stats.snapshot()
 
     def queue_snapshot(self) -> dict[str, Any]:
-        return self.stats.queue_snapshot()
+        snapshot = self.stats.queue_snapshot()
+        if self.jobs is not None:
+            try:
+                snapshot["jobs"] = self.jobs.counts_by_status()
+            except Exception as exc:
+                snapshot["jobs"] = {"error": type(exc).__name__}
+        return snapshot
+
+    def _require_jobs(self) -> Any:
+        if self.jobs is None:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "job queue unavailable",
+                "job store is not configured (set DATABASE_URL)",
+            )
+        return self.jobs
+
+    def submit_process(self, request: ProcessRequest) -> dict[str, Any]:
+        store = self._require_jobs()
+        try:
+            job = store.enqueue(
+                endpoint="/v1/process",
+                request=request.model_dump(mode="json"),
+                source=request.source,
+                source_item_id=request.source_item_id,
+            )
+        except Exception as exc:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "job queue unavailable",
+                f"job enqueue failed: {type(exc).__name__}",
+            ) from exc
+        self.stats.increment("jobs_enqueued")
+        return JobAccepted(
+            job_id=job["job_id"],
+            status_url=f"/v1/jobs/{job['job_id']}",
+        ).model_dump(mode="json")
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        store = self._require_jobs()
+        try:
+            row = store.get(job_id)
+        except Exception as exc:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "job queue unavailable",
+                f"job lookup failed: {type(exc).__name__}",
+            ) from exc
+        return JobRecord.model_validate(row).model_dump(mode="json") if row else None
+
+    def list_jobs(self, query: JobQuery) -> dict[str, Any]:
+        store = self._require_jobs()
+        limit = min(query.limit, self.settings.max_page_size)
+        try:
+            rows, total = store.list_jobs(
+                status=query.status,
+                source=query.source,
+                source_item_id=query.source_item_id,
+                limit=limit,
+                offset=query.offset,
+                order=query.order,
+            )
+        except Exception as exc:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "job queue unavailable",
+                f"job query failed: {type(exc).__name__}",
+            ) from exc
+        return JobListResponse(
+            total=total,
+            limit=limit,
+            offset=query.offset,
+            items=[JobRecord.model_validate(row) for row in rows],
+        ).model_dump(mode="json")
 
     @contextmanager
     def _track_failure(
@@ -659,9 +747,11 @@ def build_default_service() -> QuantDistillService:
             timeout=settings.sentiment_timeout,
         )
     run_metrics = RunMetricsRepository(settings.database_url) if settings.database_url else None
+    jobs = JobsRepository(settings.database_url) if settings.database_url else None
     return QuantDistillService(
         llm_client=llm,
         watchlist_client=watchlist,
         sentiment_client=sentiment_client,
         run_metrics_repository=run_metrics,
+        jobs_repository=jobs,
     )

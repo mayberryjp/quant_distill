@@ -65,6 +65,10 @@ def register_process_routes(app: Bottle, *, service: Any) -> None:
         except ValidationError as exc:
             return _error(422, "validation_error", "Invalid request", _validation_detail(exc))
         try:
-            return service.process(payload)
+            accepted = service.submit_process(payload)
         except DependencyUnavailableError as exc:
             return _error(503, exc.code, exc.error, exc.detail)
+        response.status = 202
+        response.content_type = "application/json"
+        response.headers["Location"] = accepted["status_url"]
+        return accepted
