@@ -3,7 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, Integer, MetaData, String, Table, Column, create_engine
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Column,
+    DateTime,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    and_,
+    create_engine,
+    func,
+    select,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 
@@ -81,3 +94,56 @@ class RunMetricsRepository:
 
     def close(self) -> None:
         self.engine.dispose()
+
+    def readiness(self) -> tuple[bool, str]:
+        try:
+            with self.engine.connect() as connection:
+                connection.execute(select(func.count()).select_from(run_metrics)).scalar_one()
+            return True, "ok"
+        except Exception as exc:
+            return False, type(exc).__name__
+
+    def list_runs(
+        self,
+        *,
+        source: str | None = None,
+        endpoint: str | None = None,
+        status: str | None = None,
+        source_item_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        order: str = "desc",
+    ) -> tuple[list[dict[str, Any]], int]:
+        filters = []
+        if source:
+            filters.append(run_metrics.c.source == source)
+        if endpoint:
+            filters.append(run_metrics.c.endpoint == endpoint)
+        if status:
+            filters.append(run_metrics.c.status == status)
+        if source_item_id:
+            filters.append(run_metrics.c.source_item_id == source_item_id)
+        if since:
+            filters.append(run_metrics.c.started_at >= since)
+        if until:
+            filters.append(run_metrics.c.started_at <= until)
+
+        order_by = run_metrics.c.started_at.asc() if order == "asc" else run_metrics.c.started_at.desc()
+        query = run_metrics.select().order_by(order_by, run_metrics.c.id.desc()).limit(limit).offset(offset)
+        count_query = select(func.count()).select_from(run_metrics)
+        if filters:
+            query = query.where(and_(*filters))
+            count_query = count_query.where(and_(*filters))
+
+        with self.engine.connect() as connection:
+            rows = [dict(row) for row in connection.execute(query).mappings()]
+            total = connection.execute(count_query).scalar_one()
+        return rows, int(total)
+
+    def get_run(self, request_id: str) -> dict[str, Any] | None:
+        query = run_metrics.select().where(run_metrics.c.request_id == request_id)
+        with self.engine.connect() as connection:
+            row = connection.execute(query).mappings().first()
+        return dict(row) if row else None

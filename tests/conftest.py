@@ -18,6 +18,7 @@ def service() -> QuantDistillService:
             "sentiment_prompt_version": "v1",
             "entity_prompt_version": "v1",
             "distill_max_chunk_chars": 12,
+            "max_page_size": 100,
         },
     )()
     return QuantDistillService(

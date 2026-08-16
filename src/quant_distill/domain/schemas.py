@@ -57,6 +57,48 @@ class StatsResponse(BaseModel):
     latency_ms: dict[str, dict[str, float | None]] = Field(default_factory=dict)
 
 
+class RunQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str | None = None
+    endpoint: str | None = None
+    status: str | None = None
+    source_item_id: str | None = None
+    since: datetime | None = None
+    until: datetime | None = None
+    limit: int = Field(50, ge=1, le=1000)
+    offset: int = Field(0, ge=0)
+    order: Literal["asc", "desc"] = "desc"
+
+
+class RunRecord(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: int
+    request_id: str
+    endpoint: str
+    source: str | None = None
+    source_item_id: str | None = None
+    model: str
+    distill_prompt_version: str | None = None
+    sentiment_prompt_version: str | None = None
+    entity_prompt_version: str | None = None
+    started_at: datetime
+    completed_at: datetime
+    duration_ms: int
+    input_chars: int
+    output_chars: int
+    token_usage: dict[str, Any] = Field(default_factory=dict)
+    status: str
+    error_type: str | None = None
+
+
+class RunListResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+    total: int
+    limit: int
+    offset: int
+    items: list[RunRecord] = Field(default_factory=list)
+
+
 class Segment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     speaker: str | None = None

@@ -98,3 +98,34 @@ class FakeRunMetrics:
 
     def record(self, **record: Any) -> None:
         self.records.append(record)
+
+    def readiness(self) -> tuple[bool, str]:
+        return True, "ok"
+
+    def list_runs(self, **query: Any) -> tuple[list[dict[str, Any]], int]:
+        self.last_query = query
+        rows = [
+            {
+                "id": index + 1,
+                "request_id": record["request_id"],
+                "endpoint": record["endpoint"],
+                "source": record["source"],
+                "source_item_id": record["source_item_id"],
+                "model": record["model"],
+                "started_at": record["started_at"],
+                "completed_at": record["completed_at"],
+                "duration_ms": record["duration_ms"],
+                "input_chars": record["input_chars"],
+                "output_chars": record["output_chars"],
+                "token_usage": record["token_usage"],
+                "status": record["status"],
+            }
+            for index, record in enumerate(self.records)
+        ]
+        if query.get("source"):
+            rows = [row for row in rows if row["source"] == query["source"]]
+        return rows[query.get("offset", 0) :][: query.get("limit", 50)], len(rows)
+
+    def get_run(self, request_id: str) -> dict[str, Any] | None:
+        rows, _ = self.list_runs()
+        return next((row for row in rows if row["request_id"] == request_id), None)

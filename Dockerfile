@@ -14,6 +14,8 @@ COPY src /app/src
 RUN python -m pip install --upgrade pip \
     && python -m pip install .
 
+COPY alembic.ini /app/alembic.ini
+COPY alembic /app/alembic
 COPY supervisord.conf /app/supervisord.conf
 
 EXPOSE 8021

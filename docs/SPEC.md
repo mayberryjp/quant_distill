@@ -90,6 +90,7 @@ Peer services remain responsible for discovery, source storage, local persistenc
 | GET | `/health` | Liveness only |
 | GET | `/ready` | LLM reachable; optional dependencies checked when configured |
 | GET | `/stats` | In-memory counters and latency summaries |
+| GET | `/queue` | In-flight requests plus WSGI thread/queue state |
 | GET | `/capabilities` | Model, prompt versions, limits, enabled enrichments |
 
 ### Processing endpoints
@@ -100,6 +101,8 @@ Peer services remain responsible for discovery, source storage, local persistenc
 | POST | `/v1/distill` | Distillation only |
 | POST | `/v1/sentiment` | Sentiment from an existing summary |
 | POST | `/v1/entities` | Entity extraction from an existing summary |
+| GET | `/v1/runs` | Per-run history with source/endpoint/status filters and paging |
+| GET | `/v1/runs/{request_id}` | Single run record |
 
 ## 7. Request and Response Contracts
 

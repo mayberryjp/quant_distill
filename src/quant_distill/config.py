@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     api_listen_address: str = Field("0.0.0.0", validation_alias="API_LISTEN_ADDRESS")  # nosec B104
     api_port: int = Field(8021, validation_alias="API_PORT")
+    api_threads: int = Field(8, validation_alias="API_THREADS")
     log_level: str = Field("INFO", validation_alias="LOG_LEVEL")
 
     llm_base_url: str = Field(

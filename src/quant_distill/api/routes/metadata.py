@@ -11,6 +11,7 @@ def register_metadata_routes(
     *,
     capabilities_handler: Callable[[], dict[str, Any]],
     stats_handler: Callable[[], dict[str, Any]],
+    queue_handler: Callable[[], dict[str, Any]],
 ) -> None:
     @app.get("/capabilities")
     def capabilities() -> dict[str, Any]:
@@ -21,3 +22,8 @@ def register_metadata_routes(
     def stats() -> dict[str, Any]:
         response.content_type = "application/json"
         return stats_handler()
+
+    @app.get("/queue")
+    def queue() -> dict[str, Any]:
+        response.content_type = "application/json"
+        return queue_handler()

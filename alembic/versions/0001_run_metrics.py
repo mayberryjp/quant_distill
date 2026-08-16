@@ -7,6 +7,7 @@ Create Date: 2026-08-14
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "0001_run_metrics"
@@ -18,6 +19,7 @@ SCHEMA_NAME = "quant_distill"
 
 
 def upgrade() -> None:
+    op.execute(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}")
     op.create_table(
         "run_metrics",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
@@ -34,7 +36,7 @@ def upgrade() -> None:
         sa.Column("duration_ms", sa.Integer(), nullable=False),
         sa.Column("input_chars", sa.Integer(), nullable=False),
         sa.Column("output_chars", sa.Integer(), nullable=False),
-        sa.Column("token_usage", sa.dialects.postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("token_usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("error_type", sa.String(length=128)),
         schema=SCHEMA_NAME,

@@ -8,6 +8,7 @@ from bottle import Bottle, request, response
 from quant_distill.api.routes.health import register_health_routes
 from quant_distill.api.routes.metadata import register_metadata_routes
 from quant_distill.api.routes.process import register_process_routes
+from quant_distill.api.routes.runs import register_run_routes
 from quant_distill.domain.schemas import ErrorEnvelope
 from quant_distill.domain.service import build_default_service
 from quant_distill.logging import configure_logging
@@ -21,11 +22,25 @@ def create_app(
     readiness_check: Any = None,
     capabilities_handler: Any = None,
     stats_handler: Any = None,
+    queue_handler: Any = None,
 ) -> Bottle:
     configure_logging()
     app = Bottle()
     app.title = SERVICE_NAME
     service = service or build_default_service()
+    stats = getattr(service, "stats", None)
+
+    @app.hook("before_request")
+    def track_request_start() -> None:
+        if stats is not None:
+            request.environ["quant_distill.request_token"] = stats.request_started(
+                request.path, request.method
+            )
+
+    @app.hook("after_request")
+    def track_request_end() -> None:
+        if stats is not None:
+            stats.request_finished(request.environ.pop("quant_distill.request_token", None))
 
     @app.hook("after_request")
     def add_cors_headers() -> None:
@@ -46,13 +61,17 @@ def create_app(
         app,
         capabilities_handler=capabilities_handler or service.capabilities,
         stats_handler=stats_handler or service.stats_snapshot,
+        queue_handler=queue_handler or service.queue_snapshot,
     )
     register_process_routes(app, service=service)
+    register_run_routes(app, service=service)
     for path in (
         "/health",
         "/ready",
         "/capabilities",
         "/stats",
+        "/queue",
+        "/v1/runs",
         "/v1/distill",
         "/v1/sentiment",
         "/v1/entities",

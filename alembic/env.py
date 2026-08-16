@@ -13,6 +13,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = metadata
+VERSION_TABLE = "alembic_version_distill"
 
 
 def run_migrations_online() -> None:
@@ -28,7 +29,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             include_schemas=True,
-            version_table="quant_distill_alembic_version",
+            version_table=VERSION_TABLE,
             version_table_schema=SCHEMA_NAME,
         )
         with context.begin_transaction():

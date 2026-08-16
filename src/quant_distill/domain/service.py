@@ -23,6 +23,9 @@ from quant_distill.domain.schemas import (
     ProcessOptions,
     ProcessResponse,
     ProcessingEnvelope,
+    RunListResponse,
+    RunQuery,
+    RunRecord,
     SentimentEndpointResponse,
     SourceEnvelope,
     SummaryRequest,
@@ -126,17 +129,126 @@ class QuantDistillService:
         else:
             dependencies.append({"name": "sentiment", "status": "disabled", "detail": None})
 
+        if self.run_metrics is not None:
+            m_ok, m_detail = self.run_metrics.readiness()
+            dependencies.append(
+                {"name": "run_metrics", "status": "ok" if m_ok else "unavailable", "detail": m_detail}
+            )
+        else:
+            dependencies.append({"name": "run_metrics", "status": "disabled", "detail": None})
+
         overall_ok = all(dep["status"] != "unavailable" for dep in dependencies if dep["name"] == "llm")
         return {"ok": overall_ok, "dependencies": dependencies}
 
     def stats_snapshot(self) -> dict[str, Any]:
         return self.stats.snapshot()
 
+    def queue_snapshot(self) -> dict[str, Any]:
+        return self.stats.queue_snapshot()
+
+    @contextmanager
+    def _track_failure(
+        self,
+        *,
+        request_id: str,
+        endpoint: str,
+        source: str | None,
+        source_item_id: str | None,
+        started_at: datetime,
+        start: float,
+        input_chars: int,
+    ) -> Iterator[None]:
+        try:
+            yield
+        except Exception as exc:
+            detail = exc.detail if isinstance(exc, DependencyUnavailableError) else str(exc)
+            self.stats.increment("requests_total")
+            self.stats.increment(f"requests:{endpoint}")
+            self.stats.increment(f"failure:{endpoint}")
+            self._record_run(
+                request_id=request_id,
+                endpoint=endpoint,
+                source=source,
+                source_item_id=source_item_id,
+                started_at=started_at,
+                duration_ms=_ms(start),
+                input_chars=input_chars,
+                output_chars=0,
+                token_usage={},
+                status="failed",
+                error_type=f"{type(exc).__name__}: {detail}"[:128],
+            )
+            raise
+
+    def list_runs(self, query: RunQuery) -> dict[str, Any]:
+        if self.run_metrics is None:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "run history unavailable",
+                "run metrics store is not configured (set DATABASE_URL)",
+            )
+        limit = min(query.limit, self.settings.max_page_size)
+        try:
+            rows, total = self.run_metrics.list_runs(
+                source=query.source,
+                endpoint=query.endpoint,
+                status=query.status,
+                source_item_id=query.source_item_id,
+                since=query.since,
+                until=query.until,
+                limit=limit,
+                offset=query.offset,
+                order=query.order,
+            )
+        except Exception as exc:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "run history unavailable",
+                f"run metrics query failed: {type(exc).__name__}",
+            ) from exc
+        return RunListResponse(
+            total=total,
+            limit=limit,
+            offset=query.offset,
+            items=[RunRecord.model_validate(row) for row in rows],
+        ).model_dump(mode="json")
+
+    def get_run(self, request_id: str) -> dict[str, Any] | None:
+        if self.run_metrics is None:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "run history unavailable",
+                "run metrics store is not configured (set DATABASE_URL)",
+            )
+        try:
+            row = self.run_metrics.get_run(request_id)
+        except Exception as exc:
+            raise DependencyUnavailableError(
+                "dependency_unavailable",
+                "run history unavailable",
+                f"run metrics query failed: {type(exc).__name__}",
+            ) from exc
+        return RunRecord.model_validate(row).model_dump(mode="json") if row else None
+
     def distill(self, request: Any) -> dict[str, Any]:
         request_id = str(uuid4())
-        endpoint = "/v1/distill"
         started_at = datetime.now(timezone.utc)
         start = perf_counter()
+        with self._track_failure(
+            request_id=request_id,
+            endpoint="/v1/distill",
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            start=start,
+            input_chars=len(request.text),
+        ):
+            return self._distill(request, request_id, started_at, start)
+
+    def _distill(
+        self, request: Any, request_id: str, started_at: datetime, start: float
+    ) -> dict[str, Any]:
+        endpoint = "/v1/distill"
         with _llm_guard("distill"):
             out, usage, chunk_count = distiller.distill(
                 self.llm,
@@ -176,9 +288,23 @@ class QuantDistillService:
 
     def sentiment(self, request: SummaryRequest) -> dict[str, Any]:
         request_id = str(uuid4())
-        endpoint = "/v1/sentiment"
         started_at = datetime.now(timezone.utc)
         start = perf_counter()
+        with self._track_failure(
+            request_id=request_id,
+            endpoint="/v1/sentiment",
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            start=start,
+            input_chars=len(request.summary),
+        ):
+            return self._sentiment(request, request_id, started_at, start)
+
+    def _sentiment(
+        self, request: SummaryRequest, request_id: str, started_at: datetime, start: float
+    ) -> dict[str, Any]:
+        endpoint = "/v1/sentiment"
         with _llm_guard("sentiment"):
             out, usage = sentiment.extract_sentiment(self.llm, request.summary)
         self.stats.mark_llm_success()
@@ -213,9 +339,23 @@ class QuantDistillService:
 
     def entities(self, request: SummaryRequest) -> dict[str, Any]:
         request_id = str(uuid4())
-        endpoint = "/v1/entities"
         started_at = datetime.now(timezone.utc)
         start = perf_counter()
+        with self._track_failure(
+            request_id=request_id,
+            endpoint="/v1/entities",
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            start=start,
+            input_chars=len(request.summary),
+        ):
+            return self._entities(request, request_id, started_at, start)
+
+    def _entities(
+        self, request: SummaryRequest, request_id: str, started_at: datetime, start: float
+    ) -> dict[str, Any]:
+        endpoint = "/v1/entities"
         with _llm_guard("entities"):
             out, usage = entities.extract_entities(self.llm, request.summary)
         self.stats.mark_llm_success()
@@ -252,9 +392,23 @@ class QuantDistillService:
 
     def process(self, request: ProcessRequest) -> dict[str, Any]:
         request_id = str(uuid4())
-        endpoint = "/v1/process"
         started_at = datetime.now(timezone.utc)
         started = perf_counter()
+        with self._track_failure(
+            request_id=request_id,
+            endpoint="/v1/process",
+            source=request.source,
+            source_item_id=request.source_item_id,
+            started_at=started_at,
+            start=started,
+            input_chars=len(request.text),
+        ):
+            return self._process(request, request_id, started_at, started)
+
+    def _process(
+        self, request: ProcessRequest, request_id: str, started_at: datetime, started: float
+    ) -> dict[str, Any]:
+        endpoint = "/v1/process"
         total_usage: dict[str, int | float] = {}
         durations: dict[str, int] = {}
         warnings: list[str] = []
@@ -366,6 +520,8 @@ class QuantDistillService:
         distill_prompt_version: str | None = None,
         sentiment_prompt_version: str | None = None,
         entity_prompt_version: str | None = None,
+        status: str = "succeeded",
+        error_type: str | None = None,
     ) -> None:
         if self.run_metrics is None:
             return
@@ -385,7 +541,8 @@ class QuantDistillService:
                 input_chars=input_chars,
                 output_chars=output_chars,
                 token_usage=token_usage,
-                status="succeeded",
+                status=status,
+                error_type=error_type,
             )
         except Exception:
             log.exception("run metrics write failed request_id=%s", request_id)
