@@ -112,7 +112,7 @@ class RunMetricsRepository:
         source_item_id: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
-        limit: int = 50,
+        limit: int | None = None,
         offset: int = 0,
         order: str = "desc",
     ) -> tuple[list[dict[str, Any]], int]:
@@ -131,7 +131,9 @@ class RunMetricsRepository:
             filters.append(run_metrics.c.started_at <= until)
 
         order_by = run_metrics.c.started_at.asc() if order == "asc" else run_metrics.c.started_at.desc()
-        query = run_metrics.select().order_by(order_by, run_metrics.c.id.desc()).limit(limit).offset(offset)
+        query = run_metrics.select().order_by(order_by, run_metrics.c.id.desc()).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         count_query = select(func.count()).select_from(run_metrics)
         if filters:
             query = query.where(and_(*filters))

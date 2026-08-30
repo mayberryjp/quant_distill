@@ -125,7 +125,12 @@ class FakeRunMetrics:
         ]
         if query.get("source"):
             rows = [row for row in rows if row["source"] == query["source"]]
-        return rows[query.get("offset", 0) :][: query.get("limit", 50)], len(rows)
+        total = len(rows)
+        rows = rows[query.get("offset", 0) :]
+        limit = query.get("limit")
+        if limit is not None:
+            rows = rows[:limit]
+        return rows, total
 
     def get_run(self, request_id: str) -> dict[str, Any] | None:
         rows, _ = self.list_runs()
@@ -187,7 +192,12 @@ class FakeJobs:
             rows = [row for row in rows if row["status"] == query["status"]]
         if query.get("source"):
             rows = [row for row in rows if row["source"] == query["source"]]
-        return rows[query.get("offset", 0) :][: query.get("limit", 50)], len(rows)
+        total = len(rows)
+        rows = rows[query.get("offset", 0) :]
+        limit = query.get("limit")
+        if limit is not None:
+            rows = rows[:limit]
+        return rows, total
 
     def counts_by_status(self) -> dict[str, int]:
         counts: dict[str, int] = {}

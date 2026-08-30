@@ -26,7 +26,7 @@ services:
       SENTIMENT_API_URL: "http://quant-sentiment:8017/sentiment"
       SENTIMENT_API_KEY: ""
       SENTIMENT_TIMEOUT: "30"
-      SENTIMENT_REQUIRED: "false"
+      SENTIMENT_REQUIREDgit add: "false"
 
       # quant_signals watchlist delivery API
       SIGNALS_API_URL: "http://quant-signals:8016/signals"

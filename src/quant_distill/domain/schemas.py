@@ -77,7 +77,8 @@ class RunQuery(BaseModel):
     source_item_id: str | None = None
     since: datetime | None = None
     until: datetime | None = None
-    limit: int = Field(50, ge=1, le=1000)
+    # Unbounded by default; when provided, honored as-is without an upper cap.
+    limit: int | None = Field(None, ge=1)
     offset: int = Field(0, ge=0)
     order: Literal["asc", "desc"] = "desc"
 
@@ -106,7 +107,7 @@ class RunRecord(BaseModel):
 class RunListResponse(BaseModel):
     status: Literal["ok"] = "ok"
     total: int
-    limit: int
+    limit: int | None
     offset: int
     items: list[RunRecord] = Field(default_factory=list)
 
@@ -116,7 +117,8 @@ class JobQuery(BaseModel):
     status: Literal["queued", "running", "succeeded", "failed"] | None = None
     source: str | None = None
     source_item_id: str | None = None
-    limit: int = Field(50, ge=1, le=1000)
+    # Unbounded by default; when provided, honored as-is without an upper cap.
+    limit: int | None = Field(None, ge=1)
     offset: int = Field(0, ge=0)
     order: Literal["asc", "desc"] = "desc"
 
@@ -146,7 +148,7 @@ class JobRecord(BaseModel):
 class JobListResponse(BaseModel):
     status: Literal["ok"] = "ok"
     total: int
-    limit: int
+    limit: int | None
     offset: int
     items: list[JobRecord] = Field(default_factory=list)
 

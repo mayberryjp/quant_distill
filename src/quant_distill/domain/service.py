@@ -211,13 +211,12 @@ class QuantDistillService:
 
     def list_jobs(self, query: JobQuery) -> dict[str, Any]:
         store = self._require_jobs()
-        limit = min(query.limit, self.settings.max_page_size)
         try:
             rows, total = store.list_jobs(
                 status=query.status,
                 source=query.source,
                 source_item_id=query.source_item_id,
-                limit=limit,
+                limit=query.limit,
                 offset=query.offset,
                 order=query.order,
             )
@@ -229,7 +228,7 @@ class QuantDistillService:
             ) from exc
         return JobListResponse(
             total=total,
-            limit=limit,
+            limit=query.limit,
             offset=query.offset,
             items=[JobRecord.model_validate(row) for row in rows],
         ).model_dump(mode="json")
@@ -275,7 +274,6 @@ class QuantDistillService:
                 "run history unavailable",
                 "run metrics store is not configured (set DATABASE_URL)",
             )
-        limit = min(query.limit, self.settings.max_page_size)
         try:
             rows, total = self.run_metrics.list_runs(
                 source=query.source,
@@ -284,7 +282,7 @@ class QuantDistillService:
                 source_item_id=query.source_item_id,
                 since=query.since,
                 until=query.until,
-                limit=limit,
+                limit=query.limit,
                 offset=query.offset,
                 order=query.order,
             )
@@ -296,7 +294,7 @@ class QuantDistillService:
             ) from exc
         return RunListResponse(
             total=total,
-            limit=limit,
+            limit=query.limit,
             offset=query.offset,
             items=[RunRecord.model_validate(row) for row in rows],
         ).model_dump(mode="json")

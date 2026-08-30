@@ -128,7 +128,7 @@ class JobsRepository:
         status: str | None = None,
         source: str | None = None,
         source_item_id: str | None = None,
-        limit: int = 50,
+        limit: int | None = None,
         offset: int = 0,
         order: str = "desc",
     ) -> tuple[list[dict[str, Any]], int]:
@@ -141,7 +141,9 @@ class JobsRepository:
             filters.append(jobs.c.source_item_id == source_item_id)
 
         order_by = jobs.c.id.asc() if order == "asc" else jobs.c.id.desc()
-        query = jobs.select().order_by(order_by).limit(limit).offset(offset)
+        query = jobs.select().order_by(order_by).offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
         count_query = select(func.count()).select_from(jobs)
         if filters:
             query = query.where(and_(*filters))
