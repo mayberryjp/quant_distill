@@ -20,7 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 
-SCHEMA_NAME = "quant_distill"
+SCHEMA_NAME = "distill"
 
 metadata = MetaData(schema=SCHEMA_NAME)
 run_metrics = Table(

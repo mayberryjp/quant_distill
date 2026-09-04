@@ -15,7 +15,7 @@ down_revision = "0001_run_metrics"
 branch_labels = None
 depends_on = None
 
-SCHEMA_NAME = "quant_distill"
+SCHEMA_NAME = "distill"
 
 
 def upgrade() -> None:

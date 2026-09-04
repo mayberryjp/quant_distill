@@ -14,6 +14,29 @@ if config.config_file_name is not None:
 
 target_metadata = metadata
 VERSION_TABLE = "alembic_version_distill"
+LEGACY_SCHEMA_NAME = "quant_distill"
+
+
+def _relocate_legacy_tables(connection) -> None:
+    """Ensure the distill schema exists, move any tables still living in the
+    legacy schema (including the alembic version table) into it, then drop the
+    now-empty legacy schema."""
+    connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
+    legacy_tables = (
+        connection.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = :schema"),
+            {"schema": LEGACY_SCHEMA_NAME},
+        )
+        .scalars()
+        .all()
+    )
+    for table_name in legacy_tables:
+        connection.execute(
+            text(f'ALTER TABLE {LEGACY_SCHEMA_NAME}."{table_name}" SET SCHEMA {SCHEMA_NAME}')
+        )
+    # Tables were moved (not dropped), so their data persists; drop the emptied schema.
+    connection.execute(text(f"DROP SCHEMA IF EXISTS {LEGACY_SCHEMA_NAME} RESTRICT"))
+    connection.commit()
 
 
 def run_migrations_online() -> None:
@@ -23,8 +46,7 @@ def run_migrations_online() -> None:
 
     connectable = create_engine(database_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}"))
-        connection.commit()
+        _relocate_legacy_tables(connection)
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
