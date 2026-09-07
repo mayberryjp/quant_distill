@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 
+from quant_distill.config import settings
 from quant_distill.repository.run_metrics import metadata
 
 QUEUED = "queued"
@@ -49,12 +50,16 @@ jobs = Table(
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now().astimezone()
 
 
 class JobsRepository:
     def __init__(self, database_url: str, *, engine: Engine | None = None) -> None:
-        self.engine = engine or create_engine(database_url, pool_pre_ping=True)
+        self.engine = engine or create_engine(
+            database_url,
+            pool_pre_ping=True,
+            connect_args={"options": f"-c timezone={settings.timezone}"},
+        )
 
     def enqueue(
         self,

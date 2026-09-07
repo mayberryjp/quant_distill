@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime
 import threading
 from time import perf_counter
 from typing import Any
@@ -53,7 +53,7 @@ class StatsCollector:
             self._in_flight[token] = {
                 "endpoint": endpoint,
                 "method": method,
-                "started_at": datetime.now(timezone.utc),
+                "started_at": datetime.now().astimezone(),
                 "started": perf_counter(),
                 "thread": threading.current_thread().name,
             }
@@ -94,7 +94,7 @@ class StatsCollector:
         active = self.in_flight()
         return {
             "status": "ok",
-            "observed_at": _iso(datetime.now(timezone.utc)),
+            "observed_at": _iso(datetime.now().astimezone()),
             "server": server_info(),
             "in_flight_total": len(active),
             "in_flight_by_endpoint": self.in_flight_by_endpoint(),
@@ -111,10 +111,10 @@ class StatsCollector:
             del samples[0]
 
     def mark_llm_success(self) -> None:
-        self.last_successful_llm_call_at = datetime.now(timezone.utc)
+        self.last_successful_llm_call_at = datetime.now().astimezone()
 
     def mark_watchlist_failure(self) -> None:
-        self.last_watchlist_failure_at = datetime.now(timezone.utc)
+        self.last_watchlist_failure_at = datetime.now().astimezone()
 
     def snapshot(self) -> dict[str, Any]:
         latency = {

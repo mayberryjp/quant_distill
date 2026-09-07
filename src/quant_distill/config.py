@@ -40,6 +40,9 @@ class Settings(BaseSettings):
 
     database_url: str = Field("", validation_alias="DATABASE_URL")
 
+    # Container-local timezone; applied to app timestamps and the Postgres session.
+    timezone: str = Field("America/New_York", validation_alias="TZ")
+
     http_retries: int = Field(3, validation_alias="HTTP_RETRIES")
     retry_backoff: float = Field(1.0, validation_alias="RETRY_BACKOFF")
     max_page_size: int = Field(100, validation_alias="MAX_PAGE_SIZE")

@@ -20,6 +20,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 
+from quant_distill.config import settings
+
 SCHEMA_NAME = "distill"
 
 metadata = MetaData(schema=SCHEMA_NAME)
@@ -48,7 +50,11 @@ run_metrics = Table(
 
 class RunMetricsRepository:
     def __init__(self, database_url: str, *, engine: Engine | None = None) -> None:
-        self.engine = engine or create_engine(database_url, pool_pre_ping=True)
+        self.engine = engine or create_engine(
+            database_url,
+            pool_pre_ping=True,
+            connect_args={"options": f"-c timezone={settings.timezone}"},
+        )
 
     def record(
         self,

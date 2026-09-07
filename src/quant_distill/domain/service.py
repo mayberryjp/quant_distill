@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 import logging
 from time import perf_counter
@@ -318,7 +318,7 @@ class QuantDistillService:
 
     def distill(self, request: Any) -> dict[str, Any]:
         request_id = str(uuid4())
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now().astimezone()
         start = perf_counter()
         with self._track_failure(
             request_id=request_id,
@@ -374,7 +374,7 @@ class QuantDistillService:
 
     def sentiment(self, request: SummaryRequest) -> dict[str, Any]:
         request_id = str(uuid4())
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now().astimezone()
         start = perf_counter()
         with self._track_failure(
             request_id=request_id,
@@ -425,7 +425,7 @@ class QuantDistillService:
 
     def entities(self, request: SummaryRequest) -> dict[str, Any]:
         request_id = str(uuid4())
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now().astimezone()
         start = perf_counter()
         with self._track_failure(
             request_id=request_id,
@@ -478,7 +478,7 @@ class QuantDistillService:
 
     def process(self, request: ProcessRequest) -> dict[str, Any]:
         request_id = str(uuid4())
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now().astimezone()
         started = perf_counter()
         with self._track_failure(
             request_id=request_id,
@@ -551,7 +551,7 @@ class QuantDistillService:
                 source=request.source,
                 source_type=request.source_type,
                 source_item_id=request.source_item_id,
-                observed_at=(request.observed_at.astimezone(timezone.utc) if request.observed_at else None),
+                observed_at=(request.observed_at.astimezone() if request.observed_at else None),
             ),
             processing=ProcessingEnvelope(
                 model=self.settings.llm_model,
@@ -622,7 +622,7 @@ class QuantDistillService:
                 sentiment_prompt_version=sentiment_prompt_version,
                 entity_prompt_version=entity_prompt_version,
                 started_at=started_at,
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now().astimezone(),
                 duration_ms=duration_ms,
                 input_chars=input_chars,
                 output_chars=output_chars,

@@ -8,6 +8,9 @@ services:
       API_THREADS: "8"
       LOG_LEVEL: "INFO"
 
+      # Container-local timezone applied to app timestamps and the Postgres session.
+      TZ: "America/New_York"
+
       # Ollama OpenAI-compatible endpoint (use service DNS, not localhost)
       LLM_BASE_URL: "http://ollama:11434/v1/chat/completions"
       LLM_MODEL: "llama3.1"
