@@ -159,6 +159,13 @@ class Segment(BaseModel):
     role: str | None = None
     summary: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_string(cls, value: object) -> object:
+        if isinstance(value, str):
+            return {"summary": value}
+        return value
+
 
 class DistillOutput(BaseModel):
     model_config = ConfigDict(extra="ignore")
